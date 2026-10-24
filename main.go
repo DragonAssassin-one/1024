@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -43,6 +44,13 @@ func main() {
 			if errors.As(err, &exit) && exit.ExitCode() > 0 {
 				os.Exit(exit.ExitCode())
 			}
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "dashboard" {
+		if err := runDashboard(); err != nil {
+			fmt.Fprintln(os.Stderr, "1024:", err)
 			os.Exit(1)
 		}
 		return
@@ -108,6 +116,7 @@ type runOptions struct {
 	extraRead      []string
 	store          *connectionStore
 	nonInteractive bool
+	output         io.Writer
 	prepare        func(home, socket, self string) ([]string, error)
 }
 
@@ -198,13 +207,27 @@ func runPrepared(agent string, folders, readOnly []string, executable string, ar
 		ctx = context.Background()
 	}
 	command := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", append([]string{"-p", profile, binary}, args...)...)
+	if options.ctx != nil {
+		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		command.Cancel = func() error {
+			if command.Process == nil {
+				return os.ErrProcessDone
+			}
+			return syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		}
+		command.WaitDelay = 2 * time.Second
+	}
 	command.Env = sandboxEnv(home, brokerPath, coverageDir)
 	command.Env = append(command.Env, extraEnv...)
 	command.Dir = project
 	if !options.nonInteractive {
 		command.Stdin = os.Stdin
 	}
-	command.Stdout, command.Stderr = os.Stdout, os.Stderr
+	output := options.output
+	if output == nil {
+		output = os.Stdout
+	}
+	command.Stdout, command.Stderr = output, output
 	if err := command.Run(); err != nil {
 		return err
 	}

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{.CSRF}}">
+  <title>KeyMoat 控制台</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="/logo" alt=""><strong>KeyMoat</strong><span>控制台</span></div>
+    <div class="agent">Agent <strong>Codex</strong><span class="tag">macOS</span></div>
+  </header>
+  <main>
+    <div class="page-head"><h1>授权与运行</h1><span id="message" role="status" aria-live="polite"></span></div>
+    <section aria-labelledby="workspace-title">
+      <h2 id="workspace-title">项目目录</h2>
+      <div class="folder-row">
+        <input id="folder" type="text" placeholder="选择或填写项目绝对路径" spellcheck="false" autocomplete="off" aria-label="授权项目目录">
+        <button id="choose" type="button">选择目录</button>
+      </div>
+      <p class="muted">此目录可读写。其他文件与网络默认拒绝。</p>
+    </section>
+    <section aria-labelledby="connections-title">
+      <h2 id="connections-title">连接</h2>
+      <div class="connection-row">
+        <div><strong>OpenAI 模型</strong><small id="openai-key">检查钥匙串中</small></div>
+        <label class="switch"><input type="checkbox" id="openai-enabled"><span aria-hidden="true"></span><span class="sr-only">OpenAI 连接</span></label>
+      </div>
+      <div class="connection-row">
+        <div><strong>GitHub 只读</strong><small id="github-key">检查钥匙串中</small></div>
+        <label class="switch"><input type="checkbox" id="github-enabled"><span aria-hidden="true"></span><span class="sr-only">GitHub 连接</span></label>
+      </div>
+      <div class="repo-row">
+        <input id="repository" type="text" placeholder="owner/repository" spellcheck="false" autocomplete="off" aria-label="GitHub 仓库">
+        <button id="grant" type="button">授权仓库</button>
+      </div>
+      <ul id="repositories" aria-label="已授权的 GitHub 仓库"></ul>
+    </section>
+    <section aria-labelledby="task-title">
+      <h2 id="task-title">Codex 任务</h2>
+      <div class="model-row"><label for="model">模型</label><input id="model" type="text" placeholder="输入此 API Key 可用的模型 ID" spellcheck="false" autocomplete="off"></div>
+      <label class="field-label" for="prompt">任务</label>
+      <textarea id="prompt" rows="4" placeholder="描述要在授权项目中完成的任务"></textarea>
+      <div class="actions">
+        <button id="run" type="button" class="primary">运行任务</button>
+        <button id="cancel" type="button" disabled>取消</button>
+        <span id="task-state" role="status"></span>
+      </div>
+      <pre id="output" aria-label="任务输出"></pre>
+    </section>
+  </main>
+</body>
+</html>

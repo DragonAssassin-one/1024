@@ -15,6 +15,7 @@ project="$tmp/project"
 coverdir="$project/coverage"
 GOCOVERDIR="$coverdir" "$app" run --agent codex --folder "$project" -- "$app" status
 GOCOVERDIR="$coverdir" go run scripts/mcp-smoke.go "$app" "$project"
+GOCOVERDIR="$coverdir" go run scripts/dashboard-smoke.go "$app"
 
 expect_failure() {
   if GOCOVERDIR="$coverdir" "$@" >/dev/null 2>&1; then

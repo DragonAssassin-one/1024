@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,12 @@ func runCodex(args []string) error {
 func runCodexWithDeps(args []string, storeForUser func() (connectionStore, error),
 	nativeBinary func() (string, error), proxyConfig func(connectionStore) modelProxyConfig,
 	ctx context.Context) error {
+	return runCodexTask(args, storeForUser, nativeBinary, proxyConfig, ctx, nil)
+}
+
+func runCodexTask(args []string, storeForUser func() (connectionStore, error),
+	nativeBinary func() (string, error), proxyConfig func(connectionStore) modelProxyConfig,
+	ctx context.Context, output io.Writer) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("this prototype requires macOS Seatbelt")
 	}
@@ -64,6 +71,7 @@ func runCodexWithDeps(args []string, storeForUser func() (connectionStore, error
 	defer proxy.Close()
 	options := runOptions{
 		ctx:            ctx,
+		output:         output,
 		proxyPort:      proxy.port(),
 		homeRoot:       filepath.Join(filepath.Dir(store.path), "sessions"),
 		extraRead:      []string{"/etc/codex/requirements.toml", "/private/etc/codex/requirements.toml"},
