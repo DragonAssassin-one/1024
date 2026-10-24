@@ -1,22 +1,6 @@
 # 架构
 
-## 代码布局
-
-所有 Go 代码目前仍在一个可执行模块和一个 `package main` 中，避免原型阶段的 import cycle；职责通过文件边界和依赖接口保持清晰：
-
-| 文件 | 责任 |
-| --- | --- |
-| `main.go` | CLI 命令分发、统一错误与退出码 |
-| `sandbox_runtime.go` | 运行器编排、目录规范化、Seatbelt profile、启动探针、进程清理 |
-| `host_broker.go` / `mcp_server.go` | 沙箱与宿主的 Unix socket 协议、MCP stdio 暴露 |
-| `authorization.go` / `authorization_cli.go` | 宿主授权状态、Agent/服务/仓库开关和 CLI 修改入口 |
-| `credential_store.go` | macOS Keychain 命令适配；生产代码不接收命令行密钥 |
-| `github_client.go` / `github_repository.go` | GitHub 身份和白名单文本文件读取 |
-| `model_proxy.go` / `codex_runner.go` | OpenAI Responses 宿主代理和 Codex 单路径运行 |
-| `dashboard.go` / `ui/` | 仅回环监听的控制台、CSRF、任务生命周期和静态页面 |
-| `scripts/` | 覆盖率合并、MCP/控制台 smoke、无凭证演示 |
-
-依赖方向固定为：CLI/UI -> runner/control -> authorization/credential -> broker/service clients。GitHub 与模型客户端不直接读 CLI 参数；沙箱进程只能通过 broker 或模型代理访问宿主能力。测试通过函数注入替换 Keychain、上游 HTTP、Codex 二进制和任务执行器。
+代码布局、依赖方向和实现取舍见[实现思路与代码结构](implementation.md)。本页只描述运行时架构和信任边界。
 
 ## 当前实现
 
