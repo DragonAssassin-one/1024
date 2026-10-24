@@ -12,6 +12,10 @@ func runMCP(ctx context.Context) error {
 	if _, err := readStatus(socket); err != nil {
 		return err
 	}
+	return newMCPServer(socket).Run(ctx, &mcp.StdioTransport{})
+}
+
+func newMCPServer(socket string) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "1024", Version: "0.1.0"}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "sandbox_status",
@@ -27,5 +31,5 @@ func runMCP(ctx context.Context) error {
 		identity, err := readIdentity(socket)
 		return nil, identity, err
 	})
-	return server.Run(ctx, &mcp.StdioTransport{})
+	return server
 }

@@ -17,11 +17,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Test with race detector and coverage
-        run: go test -count=1 -race -coverprofile=coverage.out ./...
-      - name: Check coverage
-        run: |
-          go tool cover -func=coverage.out
-          go tool cover -func=coverage.out | awk '/^total:/ { gsub("%", "", $3); if ($3 < 60) exit 1; found=1 } END { if (!found) exit 1 }'
+      - name: Test with race detector
+        run: go test -count=1 -race ./...
+      - name: Check combined process coverage
+        run: bash scripts/coverage.sh
       - name: Vet
         run: go vet ./...
