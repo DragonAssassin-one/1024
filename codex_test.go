@@ -310,3 +310,62 @@ func TestCodexModeRejectsInvalidInputs(t *testing.T) {
 		t.Fatal("invalid authorization path accepted")
 	}
 }
+
+func TestFindCodexBinaryWithoutInstalledCLI(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("native executable", func(t *testing.T) {
+		bin := filepath.Join(root, "direct", "codex")
+		if err := os.MkdirAll(filepath.Dir(bin), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", filepath.Dir(bin))
+		found, err := findCodexBinary()
+		if err != nil || found != bin {
+			t.Fatalf("native executable: %s, %v", found, err)
+		}
+	})
+	t.Run("npm launcher and missing native package", func(t *testing.T) {
+		packageRoot := filepath.Join(root, "package")
+		launcher := filepath.Join(packageRoot, "bin", "codex.js")
+		if err := os.MkdirAll(filepath.Dir(launcher), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(launcher, []byte("#!/bin/sh\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		linkDir := filepath.Join(root, "npm")
+		if err := os.Mkdir(linkDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(launcher, filepath.Join(linkDir, "codex")); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", linkDir)
+		if _, err := findCodexBinary(); err == nil {
+			t.Fatal("missing platform package accepted")
+		}
+		arch := "aarch64"
+		suffix := "arm64"
+		if runtime.GOARCH == "amd64" {
+			arch, suffix = "x86_64", "x64"
+		}
+		native := filepath.Join(packageRoot, "node_modules", "@openai", "codex-darwin-"+suffix,
+			"vendor", arch+"-apple-darwin", "bin", "codex")
+		if err := os.MkdirAll(filepath.Dir(native), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(native, []byte("#!/bin/sh\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		found, err := findCodexBinary()
+		if err != nil || found != native {
+			t.Fatalf("npm native binary: %s, %v", found, err)
+		}
+	})
+}
