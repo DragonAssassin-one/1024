@@ -1,8 +1,14 @@
 # 1024
 
-桌面级安全沙箱。Claude Code、Codex 和 DeepSeek Harness（dsh）在沙箱里工作，密钥留在沙箱外面。
+<img src="assets/1024-mark.png" alt="1024 项目标志" width="96" height="96">
 
-安全放在第一位。好用放在第二位：你做的是选择和授权。沙箱里的 MCP 配置没有 API Key、密码或 Token 可以填。
+面向 Claude Code、Codex 和 DeepSeek Harness（dsh）的 macOS 安全沙箱项目。目标是让 Agent 在各自的沙箱里工作，凭证留在宿主侧。
+
+**当前是原型，不是完整产品。** 已实现 macOS Seatbelt 文件/网络限制、独立宿主状态通道、无密钥 MCP 状态工具，以及受开关控制的 GitHub 身份查询。三款 Agent 的在线接入、其他服务代理和桌面授权界面尚未实现；不要将当前版本当作生产级安全边界。
+
+[运行原型](#现状) · [架构](docs/architecture.md) · [安全边界](docs/security.md) · [测试与覆盖率](docs/testing.md)
+
+下文“它挡住什么”至“产品原则”描述**产品目标**；实际可用范围以“现状”和上述文档为准。安全放在第一位，好用放在第二位：最终应由用户选择和授权，沙箱内不填写 API Key、密码或 Token。
 
 ## 它挡住什么
 

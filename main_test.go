@@ -30,6 +30,23 @@ func TestProfileScope(t *testing.T) {
 	}
 }
 
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "__probe" {
+		os.Exit(probe(os.Args[2:]))
+	}
+	os.Exit(m.Run())
+}
+
+func TestRunDirect(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	if err := run([]string{"run", "--agent", "codex", "--folder", t.TempDir(),
+		"--read-only", t.TempDir(), "--", "/usr/bin/true"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSandboxExecSmoke(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS only")
@@ -75,7 +92,7 @@ func TestRunIsolation(t *testing.T) {
 	}
 	t.Setenv("SECRET_MARKER", "must-not-be-inherited")
 	command := exec.Command(binary, "run", "--agent", "codex", "--folder", project, "--",
-		"/bin/sh", "-c", `set -e; printf allowed > result; test -r result; ! test -r "$1"; ! test -r link; ! /bin/cat link >/dev/null 2>&1; ! /usr/bin/env | /usr/bin/grep -q SECRET_MARKER`,
+		"/bin/sh", "-c", `set -e; printf allowed > result; printf %s "$HOME" > home-path; test -r result; ! test -r "$1"; ! test -r link; ! /bin/cat link >/dev/null 2>&1; ! /usr/bin/env | /usr/bin/grep -q SECRET_MARKER`,
 		"sh", outside)
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -84,6 +101,13 @@ func TestRunIsolation(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(project, "result"))
 	if err != nil || string(content) != "allowed" {
 		t.Fatalf("authorized write failed: %q, %v", content, err)
+	}
+	homePath, err := os.ReadFile(filepath.Join(project, "home-path"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(string(homePath)); !os.IsNotExist(err) {
+		t.Fatalf("temporary home remained after command: %v", err)
 	}
 	content, err = os.ReadFile(outside)
 	if err != nil || string(content) != "private" {
