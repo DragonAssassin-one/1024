@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -21,6 +22,13 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "status" {
 		if err := printStatus(); err != nil {
+			fmt.Fprintln(os.Stderr, "1024:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		if err := runMCP(context.Background()); err != nil {
 			fmt.Fprintln(os.Stderr, "1024:", err)
 			os.Exit(1)
 		}
