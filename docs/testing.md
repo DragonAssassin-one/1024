@@ -8,7 +8,7 @@ bash scripts/coverage.sh
 go vet ./...
 ```
 
-GitHub Actions 在 `macos-latest` 上执行相同检查，并强制要求**合并语句覆盖率至少 90%**。2026-10-25 本机非缓存测试结果为 **90.2%**。脚本先以 `go test -c -cover` 运行测试，再以 `go build -cover` 运行宿主进程、真实 Seatbelt 探针、状态子命令、MCP 协议调用和本机控制台入口；使用 Go 原生 `covdata merge` 合并计数。`GOCOVERDIR` 仅在位于已授权可写目录时才传入沙箱，其他宿主环境变量仍不继承。
+GitHub Actions 在 `macos-latest` 上执行相同检查，并强制要求**合并语句覆盖率至少 90%**。2026-10-25 本机非缓存测试结果为 **90.6%**。脚本先以 `go test -c -cover` 运行测试，再以 `go build -cover` 运行宿主进程、真实 Seatbelt 探针、状态子命令、MCP 协议调用和本机控制台入口；使用 Go 原生 `covdata merge` 合并计数。`GOCOVERDIR` 仅在位于已授权可写目录时才传入沙箱，其他宿主环境变量仍不继承。
 
 普通 `go test -cover ./...` 只计测试进程，不计独立二进制及其探针；它与上述合并覆盖率**口径不同**。覆盖率是语句执行比例，不是安全能力的百分比，也不代表安全审计。需要排查未命中代码时，可指定 `COVERAGE_PROFILE=/absolute/path/coverage.out bash scripts/coverage.sh` 生成合并后的文本 profile。
 

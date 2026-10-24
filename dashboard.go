@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -35,6 +36,7 @@ type dashboard struct {
 	mu               sync.Mutex
 	active           bool
 	cancel           context.CancelFunc
+	taskDone         chan struct{}
 	output           *boundedOutput
 	result           string
 }
@@ -311,10 +313,13 @@ func (d *dashboard) startRun(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	d.cancel, d.active, d.result = cancel, true, ""
 	d.output = &boundedOutput{}
+	d.taskDone = make(chan struct{})
 	output := d.output
+	done := d.taskDone
 	d.mu.Unlock()
 	args := []string{"--folder", folder, "--model", request.Model, "--", request.Prompt}
 	go func() {
+		defer close(done)
 		err := d.runCodex(ctx, args, output)
 		d.mu.Lock()
 		d.active = false
@@ -364,7 +369,7 @@ func runDashboard() error {
 		return err
 	}
 	defer listener.Close()
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return serveDashboard(ctx, listener, store)
 }
@@ -374,21 +379,32 @@ func serveDashboard(ctx context.Context, listener net.Listener, store connection
 	if err != nil {
 		return err
 	}
+	return serveDashboardInstance(ctx, listener, dashboard)
+}
+
+func serveDashboardInstance(ctx context.Context, listener net.Listener, dashboard *dashboard) error {
 	server := &http.Server{Handler: dashboard.handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		dashboard.mu.Lock()
 		cancel := dashboard.cancel
+		done := dashboard.taskDone
 		dashboard.mu.Unlock()
 		if cancel != nil {
 			cancel()
 		}
-		shutdown, done := context.WithTimeout(context.Background(), 3*time.Second)
-		defer done()
+		if done != nil {
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+			}
+		}
+		shutdown, stop := context.WithTimeout(context.Background(), 3*time.Second)
+		defer stop()
 		server.Shutdown(shutdown)
 	}()
 	fmt.Printf("KeyMoat control: http://%s\n", listener.Addr())
-	err = server.Serve(listener)
+	err := server.Serve(listener)
 	if err == http.ErrServerClosed {
 		return nil
 	}

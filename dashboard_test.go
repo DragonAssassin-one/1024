@@ -369,6 +369,77 @@ func TestDashboardServerShutdown(t *testing.T) {
 	}
 }
 
+func TestDashboardShutdownCancelsActiveTask(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	if err := store.setService("codex", openAIConnection, true); err != nil {
+		t.Fatal(err)
+	}
+	d, err := newDashboard(store, listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	stopped := make(chan struct{})
+	d.runCodex = func(ctx context.Context, args []string, output io.Writer) error {
+		close(started)
+		<-ctx.Done()
+		close(stopped)
+		return ctx.Err()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- serveDashboardInstance(ctx, listener, d) }()
+	base := "http://" + listener.Addr().String()
+	var response *http.Response
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); {
+		response, err = http.Get(base)
+		if err == nil {
+			response.Body.Close()
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err != nil {
+		cancel()
+		t.Fatalf("server did not start: %v", err)
+	}
+	request, _ := json.Marshal(map[string]string{"folder": t.TempDir(), "model": "test", "prompt": "task"})
+	req, _ := http.NewRequest(http.MethodPost, base+"/api/run", bytes.NewReader(request))
+	req.Header.Set("Origin", base)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-KeyMoat-CSRF", d.csrf)
+	response, err = http.DefaultClient.Do(req)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != 200 {
+		cancel()
+		t.Fatalf("task did not start: %d", response.StatusCode)
+	}
+	<-started
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("active task did not receive cancellation")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("server shutdown: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server stopped before task cleanup")
+	}
+}
+
 func TestDashboardRunValidationAndFailureResult(t *testing.T) {
 	d, server := dashboardServer(t)
 	if err := d.store.setService("codex", openAIConnection, true); err != nil {
