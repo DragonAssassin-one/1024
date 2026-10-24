@@ -10,18 +10,20 @@ import (
 )
 
 func TestProfileScope(t *testing.T) {
-	profile := seatbeltProfile("/tmp/project", "/tmp/home", "/bin/sh", "/tmp/1024")
+	profile := seatbeltProfile("/tmp/project", "/tmp/home", "/bin/sh", "/tmp/1024", "/tmp/home/broker.sock")
 	for _, rule := range []string{
 		"(deny default)",
 		"(subpath \"/tmp/project\")",
 		"(subpath \"/tmp/home\")",
 		"(literal \"/bin/sh\")",
+		"(remote unix-socket (literal \"/tmp/home/broker.sock\"))",
 	} {
 		if !strings.Contains(profile, rule) {
 			t.Fatalf("missing %s", rule)
 		}
 	}
-	if strings.Contains(profile, "(allow network") || strings.Contains(profile, "(allow default)") {
+	if strings.Contains(profile, "(allow network-outbound)") || strings.Contains(profile, "(allow default)") ||
+		strings.Contains(profile, "(allow network-bind") {
 		t.Fatal("profile unexpectedly allows network or all operations")
 	}
 }
@@ -40,9 +42,9 @@ func TestSandboxExecSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile := seatbeltProfile(project, home, binary, self)
+	profile := seatbeltProfile(project, home, binary, self, filepath.Join(home, "broker.sock"))
 	command := exec.Command("/usr/bin/sandbox-exec", "-p", profile, binary, "hello")
-	command.Env = sandboxEnv(home)
+	command.Env = sandboxEnv(home, filepath.Join(home, "broker.sock"))
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("sandbox-exec: %v: %s\nprofile:\n%s", err, output, profile)
@@ -84,6 +86,12 @@ func TestRunIsolation(t *testing.T) {
 	content, err = os.ReadFile(outside)
 	if err != nil || string(content) != "private" {
 		t.Fatalf("outside file changed: %q, %v", content, err)
+	}
+	statusCommand := exec.Command(binary, "run", "--agent", "claude", "--folder", project, "--", binary, "status")
+	output, err = statusCommand.CombinedOutput()
+	if err != nil || !strings.Contains(string(output), "Agent       claude") ||
+		!strings.Contains(string(output), "Connections 0") {
+		t.Fatalf("sandbox status: %v: %s", err, output)
 	}
 }
 

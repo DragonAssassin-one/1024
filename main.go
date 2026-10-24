@@ -19,6 +19,13 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "__probe" {
 		os.Exit(probe(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "status" {
+		if err := printStatus(); err != nil {
+			fmt.Fprintln(os.Stderr, "1024:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "1024:", err)
 		os.Exit(1)
@@ -88,12 +95,17 @@ func run(args []string) error {
 	outside.Close()
 	defer os.Remove(outsidePath)
 
-	profile := seatbeltProfile(project, home, binary, self)
-	if err := verify(profile, project, home, outsidePath, self); err != nil {
+	broker, brokerPath, err := startBroker(home, *agent, project)
+	if err != nil {
+		return fmt.Errorf("broker: %w", err)
+	}
+	defer broker.Close()
+	profile := seatbeltProfile(project, home, binary, self, brokerPath)
+	if err := verify(profile, project, home, outsidePath, self, brokerPath, *agent); err != nil {
 		return fmt.Errorf("sandbox verification failed (command not started): %w", err)
 	}
 	command := exec.Command("/usr/bin/sandbox-exec", append([]string{"-p", profile, binary}, flags.Args()[1:]...)...)
-	command.Env = sandboxEnv(home)
+	command.Env = sandboxEnv(home, brokerPath)
 	command.Dir = project
 	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := command.Run(); err != nil {
@@ -121,7 +133,7 @@ func canonicalDir(path string) (string, error) {
 	return path, nil
 }
 
-func seatbeltProfile(project, home, binary, self string) string {
+func seatbeltProfile(project, home, binary, self, socket string) string {
 	quote := strconv.Quote
 	return strings.Join([]string{
 		"(version 1)",
@@ -135,27 +147,35 @@ func seatbeltProfile(project, home, binary, self string) string {
 		"(allow file-write* (subpath " + quote(project) + ") (subpath " + quote(home) + "))",
 		"(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\"))",
 		"(allow sysctl-read)",
+		"(allow system-socket (socket-domain AF_UNIX))",
+		"(allow network-outbound (remote unix-socket (literal " + quote(socket) + ")))",
 	}, "\n")
 }
 
-func sandboxEnv(home string) []string {
+func sandboxEnv(home, socket string) []string {
 	return []string{
 		"HOME=" + home,
 		"TMPDIR=" + home,
 		"PATH=/usr/bin:/bin",
 		"LANG=C",
+		brokerSocketEnv + "=" + socket,
 	}
 }
 
-func verify(profile, project, home, outside, self string) error {
+func verify(profile, project, home, outside, self, socket, agent string) error {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
+	other, err := net.Listen("unix", outside+".sock")
+	if err != nil {
+		return err
+	}
+	defer other.Close()
 	command := exec.Command("/usr/bin/sandbox-exec", "-p", profile, self, "__probe",
-		project, home, outside, listener.Addr().String())
-	command.Env = sandboxEnv(home)
+		project, home, outside, listener.Addr().String(), socket, other.Addr().String(), agent)
+	command.Env = sandboxEnv(home, socket)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
@@ -164,7 +184,7 @@ func verify(profile, project, home, outside, self string) error {
 }
 
 func probe(args []string) int {
-	if len(args) != 4 {
+	if len(args) != 7 {
 		return 2
 	}
 	if _, err := os.ReadDir(args[0]); err != nil {
@@ -179,15 +199,29 @@ func probe(args []string) int {
 	if err := os.WriteFile(args[2], []byte("bad"), 0600); err == nil || !errors.Is(err, os.ErrPermission) {
 		return probeFailure("outside write was not denied", err)
 	}
-	conn, err := net.DialTimeout("tcp", args[3], 500*time.Millisecond)
-	if conn != nil {
-		conn.Close()
-		return probeFailure("network connection was allowed", nil)
+	status, err := readStatus(args[4])
+	if err != nil || status.Agent != args[6] || status.Folder != args[0] || len(status.Connections) != 0 {
+		return probeFailure("host status channel is unavailable or incorrect", err)
 	}
-	if !errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.EACCES) {
+	if err := deniedDial("unix", args[5]); err != nil {
+		return probeFailure("outside unix socket was not denied", err)
+	}
+	if err := deniedDial("tcp", args[3]); err != nil {
 		return probeFailure("network denial was not confirmed", err)
 	}
 	return 0
+}
+
+func deniedDial(network, address string) error {
+	conn, err := net.DialTimeout(network, address, 500*time.Millisecond)
+	if conn != nil {
+		conn.Close()
+		return errors.New("connection was allowed")
+	}
+	if !errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.EACCES) {
+		return err
+	}
+	return nil
 }
 
 func probeFailure(message string, err error) int {
