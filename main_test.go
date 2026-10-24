@@ -93,6 +93,12 @@ func TestRunIsolation(t *testing.T) {
 		!strings.Contains(string(output), "Connections 0") {
 		t.Fatalf("sandbox status: %v: %s", err, output)
 	}
+	exitCommand := exec.Command(binary, "run", "--agent", "dsh", "--folder", project, "--",
+		"/bin/sh", "-c", "exit 23")
+	output, err = exitCommand.CombinedOutput()
+	if err == nil || exitCommand.ProcessState.ExitCode() != 23 {
+		t.Fatalf("child exit code was lost: %v: %s", err, output)
+	}
 }
 
 func TestInvalidAgentFailsBeforeLaunch(t *testing.T) {
