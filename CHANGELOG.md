@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.3 - 2026-10-25
+
+- Normalize the Go runtime layout: CLI dispatch, sandbox runtime, authorization, credential storage, Codex, GitHub, broker, and MCP responsibilities now have explicit file boundaries.
+- Document the code layout and dependency direction in `docs/architecture.md`.
+- Preserve the Codex MVP, loopback authorization console, scoped GitHub MCP, and no-secret adversarial demo behavior from v0.0.2.
+
+### Validation
+
+- macOS race tests and `go vet` pass.
+- Combined process statement coverage: 91.3% locally; CI enforces at least 90%.
+- Release binaries are experimental and not code-signed or notarized.
+
 ## v0.0.2 - 2026-10-25
 
 - Adopt **KeyMoat** as the project display name and replace the numeric logo with a key-and-boundary mark. The `1024` CLI, module path, repository URL, and v0.0.1 artifacts remain unchanged for compatibility.
