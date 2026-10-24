@@ -79,3 +79,15 @@ func TestProtectedFolders(t *testing.T) {
 		t.Fatal("directory relationship is incorrect")
 	}
 }
+
+func TestControlRejectsInvalidInput(t *testing.T) {
+	for _, args := range [][]string{
+		{"connect", "github", "--agent", "other"},
+		{"connect", "other", "--agent", "codex"},
+		{"credential", "github", "secret-as-argument"},
+	} {
+		if err := control(args); err == nil {
+			t.Fatalf("accepted invalid control command: %v", args)
+		}
+	}
+}

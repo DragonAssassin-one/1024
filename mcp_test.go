@@ -43,7 +43,7 @@ func TestMCPInsideSandbox(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 1 || tools.Tools[0].Name != "sandbox_status" {
+	if err != nil || len(tools.Tools) != 2 {
 		t.Fatalf("tools: %+v, %v", tools, err)
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "sandbox_status"})
@@ -57,5 +57,9 @@ func TestMCPInsideSandbox(t *testing.T) {
 	connections, ok := status["connections"].([]any)
 	if !ok || len(connections) != 0 {
 		t.Fatalf("expected empty connection list: %#v", status)
+	}
+	denied, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "github_identity"})
+	if err != nil || !denied.IsError {
+		t.Fatalf("disabled GitHub tool must fail: %+v, %v", denied, err)
 	}
 }
