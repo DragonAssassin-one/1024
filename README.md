@@ -1,8 +1,8 @@
-# 1024
+<h1 align="center"><img src="assets/keymoat-mark.png" alt="KeyMoat 图标" width="40" height="40"> KeyMoat</h1>
 
-<img src="assets/1024-mark.png" alt="1024 项目标志" width="96" height="96">
+<p align="center">密钥留在宿主侧，Agent 留在隔离边界内。</p>
 
-面向 Claude Code、Codex 和 DeepSeek Harness（dsh）的 macOS 安全沙箱项目。目标是让 Agent 在各自的沙箱里工作，凭证留在宿主侧。
+面向 Claude Code、Codex 和 DeepSeek Harness（dsh）的 macOS 安全沙箱项目。
 
 **当前是原型，不是完整产品。** 已实现 macOS Seatbelt 文件/网络限制、独立宿主状态通道、无密钥 MCP 状态工具，以及受开关控制的 GitHub 身份查询。三款 Agent 的在线接入、其他服务代理和桌面授权界面尚未实现；不要将当前版本当作生产级安全边界。
 
@@ -14,7 +14,7 @@
 
 这三款 Agent 会读文件、改代码、执行命令，并通过 MCP 访问代码托管、数据库、搜索和其他服务。密钥若写在配置或环境变量里，跑在系统里的 Agent 自己就能读到。
 
-1024 给每个 Agent 一个独立沙箱。
+KeyMoat 的目标是给每个 Agent 一个独立沙箱。
 
 - 没点选的文件夹，打不开。
 - 没打开的连接，连不上。
@@ -72,6 +72,8 @@ Agent     Claude Code
 ## 现状
 
 目前只有 **macOS 离线沙箱原型**，尚不是上面描述的完整产品。它允许用 Go CLI 启动一个受限命令，不能直接运行需要联网的 Claude Code、Codex 或 dsh 会话。
+
+**兼容说明：** `v0.0.1` 已发布的二进制名、Go 模块路径和仓库地址仍使用 `1024`；KeyMoat 是新的产品展示名称，不会悄悄改变现有命令或旧版本下载链接。
 
 ```sh
 go build -o 1024 .

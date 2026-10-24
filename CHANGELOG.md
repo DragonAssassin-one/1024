@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Adopt **KeyMoat** as the project display name and replace the numeric logo with a key-and-boundary mark. The `1024` CLI, module path, repository URL, and v0.0.1 artifacts remain unchanged for compatibility.
+
 ## v0.0.1 - 2026-10-24
 
 First experimental macOS release of 1024.

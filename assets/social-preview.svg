@@ -1,19 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
-  <title id="title">1024 sandbox</title>
-  <desc id="desc">1024 macOS agent sandbox project preview</desc>
-  <rect width="1280" height="640" fill="#172C30"/>
-  <path d="M730 95h420M730 545h420" stroke="#36585A" stroke-width="2"/>
-  <rect x="138" y="134" width="372" height="372" rx="64" fill="#254146"/>
-  <path d="M218 249v-47h141M432 336v101H289M218 369v68h38"
-        fill="none" stroke="#82E4BF" stroke-width="16" stroke-linecap="square"/>
-  <rect x="390" y="186" width="58" height="58" rx="7" fill="#F4C96B"/>
-  <text x="324" y="348" fill="#F7FAF8" font-family="Menlo, Monaco, monospace"
-        font-size="82" font-weight="700" letter-spacing="-6" text-anchor="middle">1024</text>
-  <path d="M266 388h117" stroke="#82E4BF" stroke-width="10"/>
-  <text x="696" y="315" fill="#F7FAF8" font-family="Menlo, Monaco, monospace"
-        font-size="110" font-weight="700">1024</text>
-  <text x="702" y="389" fill="#82E4BF" font-family="Menlo, Monaco, monospace"
-        font-size="28">macOS agent sandbox</text>
-  <text x="702" y="437" fill="#B7C9C6" font-family="Menlo, Monaco, monospace"
-        font-size="20">Isolated files. Host-side credentials.</text>
+  <title id="title">KeyMoat</title>
+  <desc id="desc">KeyMoat macOS agent sandbox project preview</desc>
+  <rect width="1280" height="640" fill="#F7FAF8"/>
+  <rect x="133" y="130" width="380" height="380" rx="66" fill="#192B2C"/>
+  <path d="m323 184 116 47v87c0 69-44 119-116 146-72-27-116-77-116-146v-87Z"
+        fill="none" stroke="#8ADDBB" stroke-width="18" stroke-linejoin="round"/>
+  <circle cx="293" cy="290" r="42" fill="none" stroke="#F3C767" stroke-width="19"/>
+  <path d="m323 320 80 80m-28-28 19-19m-3 37 20-20"
+        fill="none" stroke="#F3C767" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="586" y="310" fill="#192B2C" font-family="Arial, Helvetica, sans-serif"
+        font-size="100" font-weight="700">KeyMoat</text>
+  <path d="M590 341h545" stroke="#D3DEDA" stroke-width="2"/>
+  <text x="590" y="398" fill="#314C4C" font-family="Arial, Helvetica, sans-serif"
+        font-size="31">Local sandbox for coding agents</text>
+  <text x="590" y="446" fill="#667D78" font-family="Arial, Helvetica, sans-serif"
+        font-size="23">Keys outside. Agents inside.</text>
 </svg>

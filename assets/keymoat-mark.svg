@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">KeyMoat</title>
+  <desc id="desc">A gold key enclosed by a mint-colored security boundary</desc>
+  <rect width="512" height="512" rx="88" fill="#192B2C"/>
+  <path d="M256 73 410 135v119c0 92-58 158-154 194C160 412 102 346 102 254V135Z"
+        fill="none" stroke="#8ADDBB" stroke-width="23" stroke-linejoin="round"/>
+  <circle cx="217" cy="214" r="56" fill="none" stroke="#F3C767" stroke-width="25"/>
+  <path d="m257 254 105 105m-36-36 26-26m-4 48 27-27"
+        fill="none" stroke="#F3C767" stroke-width="25" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
