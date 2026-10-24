@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.4 - 2026-10-25
+
+- Deliver the Codex single-path end-to-end workflow: real Codex CLI starts inside KeyMoat, uses an ephemeral local configuration, reaches only the host model proxy, and consumes a simulated Responses completion in CI.
+- Deliver the loopback authorization console: native folder selection, OpenAI/GitHub switches, repository grants, Codex task launch/cancel, bounded output, CSRF and same-origin checks, and shutdown cleanup.
+- Deliver the reproducible adversarial demo: writable project access succeeds, read-only and outside access fail, scoped GitHub access is revoked live, and the model proxy never exposes the upstream credential.
+- Keep the implementation experimental: real OpenAI/GitHub credentials are never used by automated tests; online Codex execution requires the host Keychain setup documented in `README.md`.
+
+### Validation
+
+- macOS race tests and `go vet` pass.
+- Combined process statement coverage: 91.3% locally; CI enforces at least 90%.
+- Release binaries are experimental and not code-signed or notarized.
+
 ## v0.0.3 - 2026-10-25
 
 - Normalize the Go runtime layout: CLI dispatch, sandbox runtime, authorization, credential storage, Codex, GitHub, broker, and MCP responsibilities now have explicit file boundaries.
