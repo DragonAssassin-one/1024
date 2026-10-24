@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -56,5 +57,25 @@ func TestConnectionStoreCorruptionFailsClosed(t *testing.T) {
 	}
 	if err := store.set("codex", true); err == nil {
 		t.Fatal("corrupt state should not be overwritten")
+	}
+}
+
+func TestProtectedFolders(t *testing.T) {
+	current, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := filepath.EvalSymlinks(current.HomeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProject(home); err == nil {
+		t.Fatal("home directory would expose host connection state")
+	}
+	if err := validateProject(t.TempDir()); err != nil {
+		t.Fatalf("unrelated project should be allowed: %v", err)
+	}
+	if !containsPath("/a/b", "/a/b/c") || containsPath("/a/b", "/a/bad") {
+		t.Fatal("directory relationship is incorrect")
 	}
 }

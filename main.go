@@ -67,8 +67,8 @@ func run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("folder: %w", err)
 	}
-	if project == "/" {
-		return errors.New("refusing to authorize the filesystem root")
+	if err := validateProject(project); err != nil {
+		return err
 	}
 	binary, err := exec.LookPath(flags.Arg(0))
 	if err != nil {

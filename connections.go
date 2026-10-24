@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -22,6 +23,50 @@ func defaultConnectionStore() (connectionStore, error) {
 		return connectionStore{}, err
 	}
 	return connectionStore{path: filepath.Join(current.HomeDir, "Library", "Application Support", "1024", "connections.json")}, nil
+}
+
+func protectedPaths() ([]string, error) {
+	store, err := defaultConnectionStore()
+	if err != nil {
+		return nil, err
+	}
+	current, err := user.Current()
+	if err != nil {
+		return nil, err
+	}
+	return []string{
+		filepath.Dir(store.path),
+		filepath.Join(current.HomeDir, "Library", "Keychains"),
+		"/Library/Keychains",
+	}, nil
+}
+
+func validateProject(project string) error {
+	if project == "/" {
+		return errors.New("refusing to authorize the filesystem root")
+	}
+	protected, err := protectedPaths()
+	if err != nil {
+		return err
+	}
+	for _, path := range protected {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			path, err = filepath.EvalSymlinks(path)
+			if err != nil {
+				return err
+			}
+		}
+		if containsPath(project, path) || containsPath(path, project) {
+			return fmt.Errorf("folder overlaps protected host state: %s", path)
+		}
+	}
+	return nil
+}
+
+func containsPath(parent, path string) bool {
+	relative, err := filepath.Rel(parent, path)
+	return err == nil && relative != ".." && !filepath.IsAbs(relative) &&
+		!strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
 func validAgent(agent string) bool {
