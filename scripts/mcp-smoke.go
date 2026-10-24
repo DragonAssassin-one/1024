@@ -28,8 +28,8 @@ func main() {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 2 {
-		fail(fmt.Errorf("expected two MCP tools, got %v: %w", tools, err))
+	if err != nil || len(tools.Tools) != 3 {
+		fail(fmt.Errorf("expected three MCP tools, got %v: %w", tools, err))
 	}
 	status, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "sandbox_status"})
 	if err != nil || status.IsError {

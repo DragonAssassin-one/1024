@@ -48,6 +48,9 @@ func TestStatusWithoutBroker(t *testing.T) {
 	if _, err := readStatus(filepath.Join(t.TempDir(), "missing.sock")); err == nil {
 		t.Fatal("missing broker socket was accepted")
 	}
+	if _, err := readGitHubFile("", "owner/repo", "README.md"); err == nil {
+		t.Fatal("GitHub file read succeeded outside sandbox")
+	}
 }
 
 func TestBrokerRevocation(t *testing.T) {
@@ -151,6 +154,10 @@ func TestBrokerClientRejectsMalformedResponses(t *testing.T) {
 		}},
 		{"missing identity", `{"login":"","id":0}` + "\n", func(path string) error {
 			_, err := readIdentity(path)
+			return err
+		}},
+		{"missing file", `{"repository":"","path":"","content":""}` + "\n", func(path string) error {
+			_, err := readGitHubFile(path, "owner/repo", "README.md")
 			return err
 		}},
 	} {

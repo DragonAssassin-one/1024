@@ -15,6 +15,7 @@ project="$tmp/project"
 coverdir="$project/coverage"
 GOCOVERDIR="$coverdir" "$app" run --agent codex --folder "$project" -- "$app" status
 GOCOVERDIR="$coverdir" go run scripts/mcp-smoke.go "$app" "$project"
+GOCOVERDIR="$coverdir" go run scripts/dashboard-smoke.go "$app"
 
 expect_failure() {
   if GOCOVERDIR="$coverdir" "$@" >/dev/null 2>&1; then
@@ -50,6 +51,12 @@ expect_failure "$app" run --agent codex --folder "$project" -- /bin/sh -c \
   sh "$app" "$folders"
 expect_failure "$app" run --agent codex --folder "$project" -- /bin/sh -c \
   'exec "$1" __probe "$2" "$HOME" /etc/hosts invalid-address "$SANDBOX_BROKER_SOCKET" /private/tmp/1024-no-socket.sock codex' \
+  sh "$app" "$folders"
+expect_failure "$app" run --agent codex --folder "$project" -- /bin/sh -c \
+  'exec "$1" __probe "$2" "$HOME" /etc/hosts 127.0.0.1:1 "$SANDBOX_BROKER_SOCKET" /private/tmp/1024-no-socket.sock codex invalid-port' \
+  sh "$app" "$folders"
+expect_failure "$app" run --agent codex --folder "$project" -- /bin/sh -c \
+  'exec "$1" __probe "$2" "$HOME" /etc/hosts 127.0.0.1:1 "$SANDBOX_BROKER_SOCKET" /private/tmp/1024-no-socket.sock codex 9' \
   sh "$app" "$folders"
 
 go tool covdata merge -i="$tmp/unit,$coverdir" -o="$tmp/combined"

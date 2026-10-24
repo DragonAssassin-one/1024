@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -204,5 +206,122 @@ func TestControlRejectsUnavailableStateAndSaveFailure(t *testing.T) {
 		func() (bool, error) { t.Fatal("disconnect read keychain"); return false, nil },
 		func() error { return nil }, io.Discard); err == nil {
 		t.Fatal("authorization write failure was swallowed")
+	}
+}
+
+func TestControlRepositoryGrantAndRevoke(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	authorize := func(args ...string) error {
+		return controlWithDeps(args,
+			func() (connectionStore, error) { return store, nil },
+			func() (bool, error) { return true, nil },
+			func() error { return nil }, io.Discard)
+	}
+	if err := authorize("grant", "github", "Owner/Repo", "--agent", "codex"); err == nil {
+		t.Fatal("granted repository before enabling connection")
+	}
+	if err := authorize("connect", "github", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	if err := authorize("grant", "github", "Owner/Repo", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err := store.repositoryAllowed("codex", "owner/repo")
+	if err != nil || !allowed {
+		t.Fatalf("repository grant: %v, %v", allowed, err)
+	}
+	if err := authorize("revoke", "github", "OWNER/REPO", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err = store.repositoryAllowed("codex", "owner/repo")
+	if err != nil || allowed {
+		t.Fatalf("repository revocation: %v, %v", allowed, err)
+	}
+}
+
+func TestOpenAIConnectionIndependentAndFailClosed(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	var output bytes.Buffer
+	exists := false
+	controlOpenAI := func(args ...string) error {
+		return controlConnectionWithDeps(args, openAIConnection,
+			func() (connectionStore, error) { return store, nil },
+			func() (bool, error) { return exists, nil },
+			func() error { return nil }, &output)
+	}
+	if err := controlOpenAI("connect", "openai", "--agent", "codex"); err == nil {
+		t.Fatal("enabled model connection without a credential")
+	}
+	exists = true
+	if err := controlOpenAI("connect", "openai", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	connections, repos, err := store.status("codex")
+	if err != nil || !slices.Equal(connections, []string{"openai"}) || len(repos) != 0 {
+		t.Fatalf("unexpected connections: %v %v %v", connections, repos, err)
+	}
+	enabled, err := store.enabledService("claude", openAIConnection)
+	if err != nil || enabled {
+		t.Fatalf("model grant leaked to another agent: %v, %v", enabled, err)
+	}
+	if err := controlOpenAI("disconnect", "openai", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err = store.enabledService("codex", openAIConnection)
+	if err != nil || enabled || !strings.Contains(output.String(), "OpenAI disabled") {
+		t.Fatalf("model grant remained active: %v, %v", enabled, err)
+	}
+	if err := store.setService("codex", "unknown", true); err == nil {
+		t.Fatal("accepted arbitrary service")
+	}
+}
+
+func TestRepositoryControlErrorsDoNotGrant(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	deps := func(args []string, getStore func() (connectionStore, error)) error {
+		return controlWithDeps(args, getStore,
+			func() (bool, error) { t.Fatal("unexpected credential lookup"); return false, nil },
+			func() error { t.Fatal("unexpected credential save"); return nil }, io.Discard)
+	}
+	goodStore := func() (connectionStore, error) { return store, nil }
+	if err := deps([]string{"grant", "github", "bad/path/extra", "--agent", "codex"}, goodStore); err == nil {
+		t.Fatal("accepted malformed repository grant")
+	}
+	if err := deps([]string{"revoke", "github", "owner/repo", "--agent", "codex"},
+		func() (connectionStore, error) { return connectionStore{}, errors.New("state unavailable") }); err == nil {
+		t.Fatal("ignored unavailable host state")
+	}
+	if err := store.setService("codex", githubConnection, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := deps([]string{"grant", "github", "owner/repo", "--agent", "codex"}, goodStore); err != nil {
+		t.Fatal(err)
+	}
+	connections, repositories, err := store.status("codex")
+	if err != nil || !slices.Equal(connections, []string{"github"}) ||
+		!slices.Equal(repositories, []string{"owner/repo"}) {
+		t.Fatalf("grant state: %v %v %v", connections, repositories, err)
+	}
+	if err := store.setService("codex", githubConnection, false); err != nil {
+		t.Fatal(err)
+	}
+	connections, repositories, err = store.status("codex")
+	if err != nil || len(connections) != 0 || len(repositories) != 0 {
+		t.Fatalf("disabled service advertised grant: %v %v %v", connections, repositories, err)
+	}
+	if err := os.WriteFile(store.path, []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := deps([]string{"grant", "github", "owner/repo", "--agent", "codex"}, goodStore); err == nil {
+		t.Fatal("corrupt state accepted grant")
+	}
+	if err := deps([]string{"revoke", "github", "owner/repo", "--agent", "codex"}, goodStore); err == nil {
+		t.Fatal("corrupt state accepted revoke")
+	}
+}
+
+func TestOpenAIControlDispatchRejectsInvalidAgent(t *testing.T) {
+	if err := control([]string{"connect", "openai", "--agent", "invalid"}); err == nil {
+		t.Fatal("invalid model connection agent accepted")
 	}
 }

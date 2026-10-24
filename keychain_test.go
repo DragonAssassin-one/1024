@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -43,6 +44,31 @@ func TestKeychainCommandsKeepCredentialOutOfArguments(t *testing.T) {
 	}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("unexpected keychain arguments: %v", calls)
+	}
+}
+
+func TestOpenAIKeychainCommandScope(t *testing.T) {
+	client := keychainClient{execute: func(args []string, interactive bool) ([]byte, error) {
+		if !slices.Contains(args, openAIKeychainService) || !slices.Contains(args, openAIKeychainAccount) {
+			t.Fatalf("OpenAI command used wrong item: %v", args)
+		}
+		if interactive {
+			return nil, nil
+		}
+		if args[len(args)-1] == "-w" {
+			return []byte("test-openai-key\n"), nil
+		}
+		return nil, nil
+	}}
+	if err := client.saveFor(openAIKeychainAccount, openAIKeychainService); err != nil {
+		t.Fatal(err)
+	}
+	if exists, err := client.existsFor(openAIKeychainAccount, openAIKeychainService); err != nil || !exists {
+		t.Fatalf("credential not found: %v, %v", exists, err)
+	}
+	if key, err := client.loadFor(openAIKeychainAccount, openAIKeychainService); err != nil ||
+		string(key) != "test-openai-key" {
+		t.Fatalf("credential load failed: %v", err)
 	}
 }
 

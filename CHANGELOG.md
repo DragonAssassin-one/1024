@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Adopt **KeyMoat** as the project display name and replace the numeric logo with a key-and-boundary mark. The `1024` CLI, module path, repository URL, and v0.0.1 artifacts remain unchanged for compatibility.
+- Add a single-path Codex runner with host-only OpenAI Responses proxy and an ephemeral local session capability. GitHub MCP can read scoped UTF-8 files from explicitly authorized repositories.
+- Add a credential-free demo and simulated model integration tests. Real upstream access still requires user-provided credentials and is not covered by CI.
+- Add a host-only KeyMoat control console for folder selection, connection/repository authorization, and Codex task launch/cancellation.
 
 ## v0.0.1 - 2026-10-24
 

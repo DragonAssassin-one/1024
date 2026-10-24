@@ -11,6 +11,8 @@ import (
 const (
 	githubKeychainService = "1024.github"
 	githubKeychainAccount = "github"
+	openAIKeychainService = "1024.openai"
+	openAIKeychainAccount = "openai"
 )
 
 func saveGitHubCredential() error {
@@ -23,6 +25,18 @@ func githubCredentialExists() (bool, error) {
 
 func loadGitHubCredential() ([]byte, error) {
 	return (keychainClient{execute: executeSecurity}).load()
+}
+
+func saveOpenAICredential() error {
+	return (keychainClient{execute: executeSecurity}).saveFor(openAIKeychainAccount, openAIKeychainService)
+}
+
+func openAICredentialExists() (bool, error) {
+	return (keychainClient{execute: executeSecurity}).existsFor(openAIKeychainAccount, openAIKeychainService)
+}
+
+func loadOpenAICredential() ([]byte, error) {
+	return (keychainClient{execute: executeSecurity}).loadFor(openAIKeychainAccount, openAIKeychainService)
 }
 
 type keychainClient struct {
@@ -39,14 +53,22 @@ func executeSecurity(args []string, interactive bool) ([]byte, error) {
 }
 
 func (c keychainClient) save() error {
-	_, err := c.execute([]string{"add-generic-password", "-U", "-a", githubKeychainAccount,
-		"-s", githubKeychainService, "-w"}, true)
+	return c.saveFor(githubKeychainAccount, githubKeychainService)
+}
+
+func (c keychainClient) saveFor(account, service string) error {
+	_, err := c.execute([]string{"add-generic-password", "-U", "-a", account,
+		"-s", service, "-w"}, true)
 	return err
 }
 
 func (c keychainClient) exists() (bool, error) {
-	_, err := c.execute([]string{"find-generic-password", "-a", githubKeychainAccount,
-		"-s", githubKeychainService}, false)
+	return c.existsFor(githubKeychainAccount, githubKeychainService)
+}
+
+func (c keychainClient) existsFor(account, service string) (bool, error) {
+	_, err := c.execute([]string{"find-generic-password", "-a", account,
+		"-s", service}, false)
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 44 {
@@ -58,8 +80,12 @@ func (c keychainClient) exists() (bool, error) {
 }
 
 func (c keychainClient) load() ([]byte, error) {
-	output, err := c.execute([]string{"find-generic-password", "-a", githubKeychainAccount,
-		"-s", githubKeychainService, "-w"}, false)
+	return c.loadFor(githubKeychainAccount, githubKeychainService)
+}
+
+func (c keychainClient) loadFor(account, service string) ([]byte, error) {
+	output, err := c.execute([]string{"find-generic-password", "-a", account,
+		"-s", service, "-w"}, false)
 	if err != nil {
 		return nil, fmt.Errorf("keychain read failed: %w", err)
 	}

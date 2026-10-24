@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net"
 	"os"
 	"os/exec"
@@ -426,5 +427,24 @@ func TestRunRejectsVerificationFailure(t *testing.T) {
 	err = run([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"})
 	if err == nil || !strings.Contains(err.Error(), "sandbox verification failed") {
 		t.Fatalf("unsafe temporary root was accepted: %v", err)
+	}
+}
+
+func TestPreparedRunRejectsConfigurationFailure(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	folder, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := errors.New("configuration rejected")
+	err = runPrepared("codex", []string{folder}, nil, "/usr/bin/true", nil, runOptions{
+		prepare: func(home, socket, self string) ([]string, error) {
+			return nil, marker
+		},
+	})
+	if !errors.Is(err, marker) {
+		t.Fatalf("configuration error was ignored: %v", err)
 	}
 }

@@ -21,6 +21,13 @@ type statusResponse struct {
 	Folders         []string `json:"folders"`
 	ReadOnlyFolders []string `json:"read_only_folders"`
 	Connections     []string `json:"connections"`
+	GitHubRepos     []string `json:"github_repositories"`
+}
+
+type brokerRequest struct {
+	Op   string `json:"op"`
+	Repo string `json:"repo,omitempty"`
+	Path string `json:"path,omitempty"`
 }
 
 type broker struct {
@@ -73,9 +80,7 @@ func (b *broker) Close() {
 func serveBrokerConnection(conn net.Conn, agent string, folders, readOnly []string, github githubService) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(12 * time.Second))
-	var request struct {
-		Op string `json:"op"`
-	}
+	var request brokerRequest
 	decoder := json.NewDecoder(io.LimitReader(conn, 4096))
 	if err := decoder.Decode(&request); err != nil {
 		json.NewEncoder(conn).Encode(map[string]string{"error": "invalid request"})
@@ -83,17 +88,14 @@ func serveBrokerConnection(conn net.Conn, agent string, folders, readOnly []stri
 	}
 	switch request.Op {
 	case "status":
-		enabled, err := github.store.enabled(agent)
+		connections, repositories, err := github.store.status(agent)
 		if err != nil {
 			json.NewEncoder(conn).Encode(map[string]string{"error": "authorization state unavailable"})
 			return
 		}
-		connections := []string{}
-		if enabled {
-			connections = append(connections, githubConnection)
-		}
 		json.NewEncoder(conn).Encode(statusResponse{Agent: agent, Folder: folders[0],
-			Folders: folders, ReadOnlyFolders: readOnly, Connections: connections})
+			Folders: folders, ReadOnlyFolders: readOnly, Connections: connections,
+			GitHubRepos: repositories})
 	case "github_identity":
 		identity, err := github.identity(context.Background(), agent)
 		if err != nil {
@@ -101,6 +103,13 @@ func serveBrokerConnection(conn net.Conn, agent string, folders, readOnly []stri
 			return
 		}
 		json.NewEncoder(conn).Encode(identity)
+	case "github_read_file":
+		file, err := github.readFile(context.Background(), agent, request.Repo, request.Path)
+		if err != nil {
+			json.NewEncoder(conn).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		json.NewEncoder(conn).Encode(file)
 	default:
 		json.NewEncoder(conn).Encode(map[string]string{"error": "unsupported request"})
 	}
@@ -108,7 +117,7 @@ func serveBrokerConnection(conn net.Conn, agent string, folders, readOnly []stri
 
 func readStatus(path string) (statusResponse, error) {
 	var status statusResponse
-	if err := brokerCall(path, "status", &status); err != nil {
+	if err := brokerCall(path, brokerRequest{Op: "status"}, &status); err != nil {
 		return status, err
 	}
 	if status.Agent == "" || status.Folder == "" || len(status.Folders) == 0 ||
@@ -120,7 +129,7 @@ func readStatus(path string) (statusResponse, error) {
 
 func readIdentity(path string) (githubIdentity, error) {
 	var identity githubIdentity
-	if err := brokerCall(path, "github_identity", &identity); err != nil {
+	if err := brokerCall(path, brokerRequest{Op: "github_identity"}, &identity); err != nil {
 		return identity, err
 	}
 	if identity.Login == "" || identity.ID <= 0 {
@@ -129,7 +138,18 @@ func readIdentity(path string) (githubIdentity, error) {
 	return identity, nil
 }
 
-func brokerCall(path, op string, result any) error {
+func readGitHubFile(path, repository, name string) (githubFile, error) {
+	var file githubFile
+	if err := brokerCall(path, brokerRequest{Op: "github_read_file", Repo: repository, Path: name}, &file); err != nil {
+		return file, err
+	}
+	if file.Repository == "" || file.Path == "" {
+		return file, errors.New("invalid broker response")
+	}
+	return file, nil
+}
+
+func brokerCall(path string, request brokerRequest, result any) error {
 	if path == "" {
 		return errors.New("not running inside a 1024 sandbox")
 	}
@@ -139,7 +159,7 @@ func brokerCall(path, op string, result any) error {
 	}
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(12 * time.Second))
-	if err := json.NewEncoder(conn).Encode(map[string]string{"op": op}); err != nil {
+	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		return err
 	}
 	var raw json.RawMessage
@@ -171,5 +191,8 @@ func printStatus() error {
 		fmt.Printf("Read only   %s\n", folder)
 	}
 	fmt.Printf("Connections %d\n", len(status.Connections))
+	for _, repository := range status.GitHubRepos {
+		fmt.Printf("GitHub repo %s\n", repository)
+	}
 	return nil
 }
