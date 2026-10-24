@@ -155,22 +155,108 @@ func (config modelProxyConfig) handler(capability string) func(http.ResponseWrit
 			http.Error(w, fmt.Sprintf("model upstream HTTP %d", response.StatusCode), http.StatusBadGateway)
 			return
 		}
-		data, err := io.ReadAll(io.LimitReader(response.Body, maxModelResponse+1))
-		if err != nil || len(data) > maxModelResponse || bytes.Contains(data, token) {
-			http.Error(w, "model response rejected", http.StatusBadGateway)
-			return
-		}
 		contentType := response.Header.Get("Content-Type")
 		switch {
 		case strings.HasPrefix(contentType, "text/event-stream"):
 			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			if err := streamModelResponse(w, response.Body, token, maxModelResponse); err != nil {
+				return
+			}
+			return
 		case strings.HasPrefix(contentType, "application/json"):
 			w.Header().Set("Content-Type", "application/json")
 		default:
 			http.Error(w, "unsupported model response", http.StatusBadGateway)
 			return
 		}
+		data, err := io.ReadAll(io.LimitReader(response.Body, maxModelResponse+1))
+		if err != nil || len(data) > maxModelResponse || bytes.Contains(data, token) {
+			http.Error(w, "model response rejected", http.StatusBadGateway)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write(data)
 	}
+}
+
+type guardedResponseWriter struct {
+	writer  io.Writer
+	token   []byte
+	pending []byte
+	total   int64
+	limit   int64
+}
+
+func streamModelResponse(writer io.Writer, reader io.Reader, token []byte, limit int64) error {
+	guard := &guardedResponseWriter{
+		writer: writer,
+		token:  token,
+		limit:  limit,
+	}
+	buffer := make([]byte, 32<<10)
+	for {
+		count, err := reader.Read(buffer)
+		if count > 0 {
+			if _, writeErr := guard.Write(buffer[:count]); writeErr != nil {
+				return writeErr
+			}
+		}
+		if err == io.EOF {
+			return guard.Flush()
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func (w *guardedResponseWriter) Write(data []byte) (int, error) {
+	w.total += int64(len(data))
+	if w.total > w.limit {
+		return 0, errors.New("model response too large")
+	}
+	w.pending = append(w.pending, data...)
+	if len(w.token) > 0 && bytes.Contains(w.pending, w.token) {
+		return 0, errors.New("model response contains credential")
+	}
+	hold := credentialPrefixSuffixLength(w.pending, w.token)
+	safeLength := len(w.pending) - hold
+	if safeLength <= 0 {
+		return len(data), nil
+	}
+	safe := w.pending[:safeLength]
+	if _, err := w.writer.Write(safe); err != nil {
+		return 0, err
+	}
+	w.pending = append([]byte(nil), w.pending[safeLength:]...)
+	return len(data), nil
+}
+
+func credentialPrefixSuffixLength(data, token []byte) int {
+	if len(token) == 0 {
+		return 0
+	}
+	maximum := len(token) - 1
+	if maximum > len(data) {
+		maximum = len(data)
+	}
+	for length := maximum; length > 0; length-- {
+		if bytes.Equal(data[len(data)-length:], token[:length]) {
+			return length
+		}
+	}
+	return 0
+}
+
+func (w *guardedResponseWriter) Flush() error {
+	if len(w.token) > 0 && bytes.Contains(w.pending, w.token) {
+		return errors.New("model response contains credential")
+	}
+	if len(w.pending) == 0 {
+		return nil
+	}
+	_, err := w.writer.Write(w.pending)
+	w.pending = nil
+	return err
 }
