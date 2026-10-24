@@ -16,10 +16,11 @@ import (
 const brokerSocketEnv = "SANDBOX_BROKER_SOCKET"
 
 type statusResponse struct {
-	Agent       string   `json:"agent"`
-	Folder      string   `json:"folder"`
-	Folders     []string `json:"folders"`
-	Connections []string `json:"connections"`
+	Agent           string   `json:"agent"`
+	Folder          string   `json:"folder"`
+	Folders         []string `json:"folders"`
+	ReadOnlyFolders []string `json:"read_only_folders"`
+	Connections     []string `json:"connections"`
 }
 
 type broker struct {
@@ -28,7 +29,7 @@ type broker struct {
 	active   sync.WaitGroup
 }
 
-func startBroker(home, agent string, folders []string, github githubService) (*broker, string, error) {
+func startBroker(home, agent string, folders, readOnly []string, github githubService) (*broker, string, error) {
 	path := filepath.Join(home, "broker.sock")
 	listener, err := net.Listen("unix", path)
 	if err != nil {
@@ -53,7 +54,7 @@ func startBroker(home, agent string, folders []string, github githubService) (*b
 				go func() {
 					defer b.active.Done()
 					defer func() { <-limit }()
-					serveBrokerConnection(conn, agent, folders, github)
+					serveBrokerConnection(conn, agent, folders, readOnly, github)
 				}()
 			default:
 				conn.Close()
@@ -69,7 +70,7 @@ func (b *broker) Close() {
 	b.active.Wait()
 }
 
-func serveBrokerConnection(conn net.Conn, agent string, folders []string, github githubService) {
+func serveBrokerConnection(conn net.Conn, agent string, folders, readOnly []string, github githubService) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(12 * time.Second))
 	var request struct {
@@ -92,7 +93,7 @@ func serveBrokerConnection(conn net.Conn, agent string, folders []string, github
 			connections = append(connections, githubConnection)
 		}
 		json.NewEncoder(conn).Encode(statusResponse{Agent: agent, Folder: folders[0],
-			Folders: folders, Connections: connections})
+			Folders: folders, ReadOnlyFolders: readOnly, Connections: connections})
 	case "github_identity":
 		identity, err := github.identity(context.Background(), agent)
 		if err != nil {
@@ -165,6 +166,9 @@ func printStatus() error {
 	fmt.Printf("Agent       %s\n", status.Agent)
 	for _, folder := range status.Folders {
 		fmt.Printf("Folder      %s\n", folder)
+	}
+	for _, folder := range status.ReadOnlyFolders {
+		fmt.Printf("Read only   %s\n", folder)
 	}
 	fmt.Printf("Connections %d\n", len(status.Connections))
 	return nil

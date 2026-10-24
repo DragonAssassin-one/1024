@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -57,12 +58,14 @@ func run(args []string) error {
 		return errors.New("this prototype requires macOS Seatbelt")
 	}
 	if len(args) == 0 || args[0] != "run" {
-		return errors.New("usage: 1024 run --agent claude|codex|dsh --folder PATH [--folder PATH ...] -- COMMAND [ARGS...]")
+		return errors.New("usage: 1024 run --agent claude|codex|dsh --folder PATH [--folder PATH ...] [--read-only PATH ...] -- COMMAND [ARGS...]")
 	}
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	agent := flags.String("agent", "", "agent identity")
 	var requested foldersFlag
+	var requestedReadOnly foldersFlag
 	flags.Var(&requested, "folder", "authorized project folder (repeatable)")
+	flags.Var(&requestedReadOnly, "read-only", "read-only folder (repeatable)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -72,20 +75,16 @@ func run(args []string) error {
 	if len(requested) == 0 || flags.NArg() == 0 {
 		return errors.New("folder and command are required")
 	}
-	folders := make([]string, 0, len(requested))
-	seen := make(map[string]bool)
-	for _, requestedFolder := range requested {
-		project, err := canonicalDir(requestedFolder)
-		if err != nil {
-			return fmt.Errorf("folder %q: %w", requestedFolder, err)
-		}
-		if err := validateProject(project); err != nil {
-			return err
-		}
-		if !seen[project] {
-			folders = append(folders, project)
-			seen[project] = true
-		}
+	folders, err := canonicalFolders(requested)
+	if err != nil {
+		return err
+	}
+	readOnly, err := canonicalFolders(requestedReadOnly)
+	if err != nil {
+		return err
+	}
+	if err := validateFolderOverlap(folders, readOnly); err != nil {
+		return err
 	}
 	project := folders[0]
 	binary, err := exec.LookPath(flags.Arg(0))
@@ -117,6 +116,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateFolderOverlap([]string{home}, readOnly); err != nil {
+		return err
+	}
 	outside, err := os.CreateTemp("", "1024-outside-")
 	if err != nil {
 		return err
@@ -129,13 +131,13 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	broker, brokerPath, err := startBroker(home, *agent, folders, newGitHubService(store))
+	broker, brokerPath, err := startBroker(home, *agent, folders, readOnly, newGitHubService(store))
 	if err != nil {
 		return fmt.Errorf("broker: %w", err)
 	}
 	defer broker.Close()
-	profile := seatbeltProfile(folders, home, binary, self, brokerPath)
-	if err := verify(profile, folders, home, outsidePath, self, brokerPath, *agent); err != nil {
+	profile := seatbeltProfile(folders, readOnly, home, binary, self, brokerPath)
+	if err := verify(profile, folders, readOnly, home, outsidePath, self, brokerPath, *agent); err != nil {
 		return fmt.Errorf("sandbox verification failed (command not started): %w", err)
 	}
 	command := exec.Command("/usr/bin/sandbox-exec", append([]string{"-p", profile, binary}, flags.Args()[1:]...)...)
@@ -144,6 +146,41 @@ func run(args []string) error {
 	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := command.Run(); err != nil {
 		return err
+	}
+	return nil
+}
+
+func canonicalFolders(requested foldersFlag) ([]string, error) {
+	folders := make([]string, 0, len(requested))
+	seen := make(map[string]bool)
+	for _, requestedFolder := range requested {
+		project, err := canonicalDir(requestedFolder)
+		if err != nil {
+			return nil, fmt.Errorf("folder %q: %w", requestedFolder, err)
+		}
+		if err := validateProject(project); err != nil {
+			return nil, err
+		}
+		if !seen[project] {
+			folders = append(folders, project)
+			seen[project] = true
+		}
+	}
+	return folders, nil
+}
+
+func validateFolderOverlap(writable, readOnly []string) error {
+	for _, readPath := range readOnly {
+		for _, device := range []string{"/dev/null", "/dev/tty"} {
+			if containsPath(readPath, device) {
+				return fmt.Errorf("read-only folder includes writable system device: %s", readPath)
+			}
+		}
+		for _, writePath := range writable {
+			if containsPath(writePath, readPath) || containsPath(readPath, writePath) {
+				return fmt.Errorf("read-only folder overlaps writable folder: %s and %s", readPath, writePath)
+			}
+		}
 	}
 	return nil
 }
@@ -181,7 +218,7 @@ func canonicalDir(path string) (string, error) {
 	return path, nil
 }
 
-func seatbeltProfile(folders []string, home, binary, self, socket string) string {
+func seatbeltProfile(folders, readOnly []string, home, binary, self, socket string) string {
 	quote := strconv.Quote
 	rules := []string{
 		"(version 1)",
@@ -203,6 +240,9 @@ func seatbeltProfile(folders []string, home, binary, self, socket string) string
 			"(allow file-read* (subpath "+quote(folder)+"))",
 			"(allow file-write* (subpath "+quote(folder)+"))")
 	}
+	for _, folder := range readOnly {
+		rules = append(rules, "(allow file-read* (subpath "+quote(folder)+"))")
+	}
 	return strings.Join(rules, "\n")
 }
 
@@ -216,7 +256,12 @@ func sandboxEnv(home, socket string) []string {
 	}
 }
 
-func verify(profile string, folders []string, home, outside, self, socket, agent string) error {
+type folderPermissions struct {
+	Writable []string `json:"writable"`
+	ReadOnly []string `json:"read_only"`
+}
+
+func verify(profile string, folders, readOnly []string, home, outside, self, socket, agent string) error {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -227,8 +272,12 @@ func verify(profile string, folders []string, home, outside, self, socket, agent
 		return err
 	}
 	defer other.Close()
-	probeArgs := append([]string{"-p", profile, self, "__probe"}, folders...)
-	probeArgs = append(probeArgs, home, outside, listener.Addr().String(), socket, other.Addr().String(), agent)
+	permissions, err := json.Marshal(folderPermissions{folders, readOnly})
+	if err != nil {
+		return err
+	}
+	probeArgs := []string{"-p", profile, self, "__probe", string(permissions),
+		home, outside, listener.Addr().String(), socket, other.Addr().String(), agent}
 	command := exec.Command("/usr/bin/sandbox-exec", probeArgs...)
 	command.Env = sandboxEnv(home, socket)
 	output, err := command.CombinedOutput()
@@ -239,15 +288,28 @@ func verify(profile string, folders []string, home, outside, self, socket, agent
 }
 
 func probe(args []string) int {
-	if len(args) < 7 {
+	if len(args) != 7 {
 		return 2
 	}
-	folders := args[:len(args)-6]
-	home, outside, tcp, socket, otherSocket, agent := args[len(args)-6], args[len(args)-5],
-		args[len(args)-4], args[len(args)-3], args[len(args)-2], args[len(args)-1]
-	for _, folder := range folders {
+	var permissions folderPermissions
+	if err := json.Unmarshal([]byte(args[0]), &permissions); err != nil || len(permissions.Writable) == 0 {
+		return probeFailure("invalid folder permissions", err)
+	}
+	home, outside, tcp, socket, otherSocket, agent := args[1], args[2], args[3], args[4], args[5], args[6]
+	for _, folder := range append(append([]string(nil), permissions.Writable...), permissions.ReadOnly...) {
 		if _, err := os.ReadDir(folder); err != nil {
 			return probeFailure("allowed folder is not readable", err)
+		}
+	}
+	for _, folder := range permissions.ReadOnly {
+		file, err := os.CreateTemp(folder, ".1024-write-probe-")
+		if err == nil {
+			file.Close()
+			os.Remove(file.Name())
+			return probeFailure("read-only folder was writable", nil)
+		}
+		if !errors.Is(err, os.ErrPermission) {
+			return probeFailure("read-only denial was not confirmed", err)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(home, "probe"), []byte("ok"), 0600); err != nil {
@@ -260,8 +322,9 @@ func probe(args []string) int {
 		return probeFailure("outside write was not denied", err)
 	}
 	status, err := readStatus(socket)
-	if err != nil || status.Agent != agent || status.Folder != folders[0] ||
-		!slices.Equal(status.Folders, folders) {
+	if err != nil || status.Agent != agent || status.Folder != permissions.Writable[0] ||
+		!slices.Equal(status.Folders, permissions.Writable) ||
+		!slices.Equal(status.ReadOnlyFolders, permissions.ReadOnly) {
 		return probeFailure("host status channel is unavailable or incorrect", err)
 	}
 	if err := deniedDial("unix", otherSocket); err != nil {

@@ -10,10 +10,11 @@ import (
 )
 
 func TestProfileScope(t *testing.T) {
-	profile := seatbeltProfile([]string{"/tmp/project"}, "/tmp/home", "/bin/sh", "/tmp/1024", "/tmp/home/broker.sock")
+	profile := seatbeltProfile([]string{"/tmp/project"}, []string{"/tmp/reference"}, "/tmp/home", "/bin/sh", "/tmp/1024", "/tmp/home/broker.sock")
 	for _, rule := range []string{
 		"(deny default)",
 		"(subpath \"/tmp/project\")",
+		"(allow file-read* (subpath \"/tmp/reference\"))",
 		"(subpath \"/tmp/home\")",
 		"(literal \"/bin/sh\")",
 		"(remote unix-socket (literal \"/tmp/home/broker.sock\"))",
@@ -23,7 +24,8 @@ func TestProfileScope(t *testing.T) {
 		}
 	}
 	if strings.Contains(profile, "(allow network-outbound)") || strings.Contains(profile, "(allow default)") ||
-		strings.Contains(profile, "(allow network-bind") {
+		strings.Contains(profile, "(allow network-bind") ||
+		strings.Contains(profile, "(allow file-write* (subpath \"/tmp/reference\"))") {
 		t.Fatal("profile unexpectedly allows network or all operations")
 	}
 }
@@ -42,7 +44,7 @@ func TestSandboxExecSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile := seatbeltProfile([]string{project}, home, binary, self, filepath.Join(home, "broker.sock"))
+	profile := seatbeltProfile([]string{project}, nil, home, binary, self, filepath.Join(home, "broker.sock"))
 	command := exec.Command("/usr/bin/sandbox-exec", "-p", profile, binary, "hello")
 	command.Env = sandboxEnv(home, filepath.Join(home, "broker.sock"))
 	output, err := command.CombinedOutput()
@@ -163,5 +165,66 @@ func TestProtectedSecondFolderFails(t *testing.T) {
 		"--folder", home, "--", "/bin/echo"})
 	if err == nil || !strings.Contains(err.Error(), "protected host state") {
 		t.Fatalf("protected second folder was accepted: %v", err)
+	}
+}
+
+func TestReadOnlyFolder(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	binary := filepath.Join(t.TempDir(), "1024")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v: %s", err, output)
+	}
+	writable, readOnly := t.TempDir(), t.TempDir()
+	readOnly, err := filepath.EvalSymlinks(readOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(readOnly, "source"), []byte("reference"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(binary, "run", "--agent", "codex", "--folder", writable,
+		"--read-only", readOnly, "--", "/bin/sh", "-c",
+		`set -e; test "$(/bin/cat "$1/source")" = reference; ! /usr/bin/touch "$1/new" 2>/dev/null; printf allowed > result`,
+		"sh", readOnly)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("read-only run: %v: %s", err, output)
+	}
+	if _, err := os.Stat(filepath.Join(readOnly, "new")); !os.IsNotExist(err) {
+		t.Fatalf("read-only folder was modified: %v", err)
+	}
+	if content, err := os.ReadFile(filepath.Join(writable, "result")); err != nil || string(content) != "allowed" {
+		t.Fatalf("writable folder failed: %q, %v", content, err)
+	}
+	status := exec.Command(binary, "run", "--agent", "codex", "--folder", writable,
+		"--read-only", readOnly, "--", binary, "status")
+	if output, err := status.CombinedOutput(); err != nil || !strings.Contains(string(output), "Read only   "+readOnly) {
+		t.Fatalf("status omitted read-only folder: %v: %s", err, output)
+	}
+}
+
+func TestFolderOverlapFails(t *testing.T) {
+	writable := t.TempDir()
+	child := filepath.Join(writable, "child")
+	if err := os.Mkdir(child, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range [][2]string{{writable, writable}, {writable, child}, {child, writable}} {
+		if err := validateFolderOverlap([]string{pair[0]}, []string{pair[1]}); err == nil {
+			t.Fatalf("accepted overlapping folders: %v", pair)
+		}
+	}
+	if err := validateFolderOverlap([]string{writable}, []string{t.TempDir()}); err != nil {
+		t.Fatalf("rejected disjoint folders: %v", err)
+	}
+	if err := validateFolderOverlap([]string{writable}, []string{"/dev"}); err == nil {
+		t.Fatal("accepted read-only folder containing writable device")
+	}
+	err := run([]string{"run", "--agent", "codex", "--folder", writable,
+		"--read-only", child, "--", "/bin/echo"})
+	if err == nil || !strings.Contains(err.Error(), "overlaps writable") {
+		t.Fatalf("overlap was accepted before launch: %v", err)
 	}
 }

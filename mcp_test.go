@@ -32,11 +32,15 @@ func TestMCPInsideSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	readOnly, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	client := mcp.NewClient(&mcp.Implementation{Name: "1024-test", Version: "0.1.0"}, nil)
 	transport := &mcp.CommandTransport{Command: exec.Command(binary, "run", "--agent", "codex",
-		"--folder", project, "--", binary, "mcp")}
+		"--folder", project, "--read-only", readOnly, "--", binary, "mcp")}
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -57,6 +61,10 @@ func TestMCPInsideSandbox(t *testing.T) {
 	folders, ok := status["folders"].([]any)
 	if !ok || len(folders) != 1 || folders[0] != project {
 		t.Fatalf("unexpected authorized folders: %#v", status)
+	}
+	readOnlyFolders, ok := status["read_only_folders"].([]any)
+	if !ok || len(readOnlyFolders) != 1 || readOnlyFolders[0] != readOnly {
+		t.Fatalf("unexpected read-only folders: %#v", status)
 	}
 	connections, ok := status["connections"].([]any)
 	if !ok || len(connections) != 0 {
