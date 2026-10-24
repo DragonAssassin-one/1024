@@ -14,6 +14,7 @@ import (
 )
 
 const githubConnection = "github"
+const openAIConnection = "openai"
 
 var repositoryNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}/[a-zA-Z0-9._-]{1,100}$`)
 
@@ -89,11 +90,15 @@ func canonicalRepository(name string) (string, error) {
 }
 
 func (s connectionStore) enabled(agent string) (bool, error) {
+	return s.enabledService(agent, githubConnection)
+}
+
+func (s connectionStore) enabledService(agent, service string) (bool, error) {
 	state, err := s.read()
 	if err != nil {
 		return false, err
 	}
-	return state[agent][githubConnection], nil
+	return state[agent][service], nil
 }
 
 func (s connectionStore) repositoryAllowed(agent, repository string) (bool, error) {
@@ -104,22 +109,26 @@ func (s connectionStore) repositoryAllowed(agent, repository string) (bool, erro
 	return state[agent][githubConnection] && state[agent]["github:"+repository], nil
 }
 
-func (s connectionStore) githubStatus(agent string) (bool, []string, error) {
+func (s connectionStore) status(agent string) ([]string, []string, error) {
 	state, err := s.read()
 	if err != nil {
-		return false, nil, err
+		return nil, nil, err
 	}
+	connections := []string{}
 	repositories := []string{}
-	if !state[agent][githubConnection] {
-		return false, repositories, nil
+	if state[agent][openAIConnection] {
+		connections = append(connections, openAIConnection)
 	}
-	for key, allowed := range state[agent] {
-		if allowed && strings.HasPrefix(key, "github:") {
-			repositories = append(repositories, strings.TrimPrefix(key, "github:"))
+	if state[agent][githubConnection] {
+		connections = append(connections, githubConnection)
+		for key, allowed := range state[agent] {
+			if allowed && strings.HasPrefix(key, "github:") {
+				repositories = append(repositories, strings.TrimPrefix(key, "github:"))
+			}
 		}
 	}
 	slices.Sort(repositories)
-	return true, repositories, nil
+	return connections, repositories, nil
 }
 
 func (s connectionStore) read() (map[string]map[string]bool, error) {
@@ -145,6 +154,12 @@ func (s connectionStore) set(agent string, enabled bool) error {
 	return s.setKey(agent, githubConnection, enabled)
 }
 
+func (s connectionStore) setService(agent, service string, enabled bool) error {
+	if service != githubConnection && service != openAIConnection {
+		return errors.New("unsupported connection")
+	}
+	return s.setKey(agent, service, enabled)
+}
 func (s connectionStore) setRepository(agent, repository string, enabled bool) error {
 	name, err := canonicalRepository(repository)
 	if err != nil {

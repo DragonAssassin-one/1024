@@ -36,6 +36,17 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "codex" {
+		if err := runCodex(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "1024:", err)
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() > 0 {
+				os.Exit(exit.ExitCode())
+			}
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "credential" || os.Args[1] == "connect" ||
 		os.Args[1] == "disconnect" || os.Args[1] == "grant" || os.Args[1] == "revoke") {
 		if err := control(os.Args[1:]); err != nil {
@@ -87,8 +98,22 @@ func run(args []string) error {
 	if err := validateFolderOverlap(folders, readOnly); err != nil {
 		return err
 	}
+	return runPrepared(*agent, folders, readOnly, flags.Arg(0), flags.Args()[1:], runOptions{})
+}
+
+type runOptions struct {
+	proxyPort      int
+	homeRoot       string
+	ctx            context.Context
+	extraRead      []string
+	store          *connectionStore
+	nonInteractive bool
+	prepare        func(home, socket, self string) ([]string, error)
+}
+
+func runPrepared(agent string, folders, readOnly []string, executable string, args []string, options runOptions) error {
 	project := folders[0]
-	binary, err := exec.LookPath(flags.Arg(0))
+	binary, err := exec.LookPath(executable)
 	if err != nil {
 		return err
 	}
@@ -108,7 +133,13 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	home, err := os.MkdirTemp("", "1024-"+*agent+"-")
+	root := options.homeRoot
+	if root != "" {
+		if err := os.MkdirAll(root, 0700); err != nil {
+			return err
+		}
+	}
+	home, err := os.MkdirTemp(root, "1024-"+agent+"-")
 	if err != nil {
 		return err
 	}
@@ -128,24 +159,52 @@ func run(args []string) error {
 	outside.Close()
 	defer os.Remove(outsidePath)
 
-	store, err := defaultConnectionStore()
-	if err != nil {
-		return err
+	store := options.store
+	if store == nil {
+		defaultStore, err := defaultConnectionStore()
+		if err != nil {
+			return err
+		}
+		store = &defaultStore
 	}
-	broker, brokerPath, err := startBroker(home, *agent, folders, readOnly, newGitHubService(store))
+	broker, brokerPath, err := startBroker(home, agent, folders, readOnly, newGitHubService(*store))
 	if err != nil {
 		return fmt.Errorf("broker: %w", err)
 	}
 	defer broker.Close()
 	profile := seatbeltProfile(folders, readOnly, home, binary, self, brokerPath)
+	for _, path := range options.extraRead {
+		profile += "\n(allow file-read* (literal " + strconv.Quote(path) + "))"
+		for parent := filepath.Dir(path); parent != "/" && parent != "."; parent = filepath.Dir(parent) {
+			profile += "\n(allow file-read-metadata (literal " + strconv.Quote(parent) + "))"
+		}
+	}
+	if options.proxyPort != 0 {
+		profile += fmt.Sprintf("\n(allow network-outbound (remote ip \"localhost:%d\"))", options.proxyPort)
+	}
 	coverageDir := permittedCoverageDir(folders)
-	if err := verify(profile, folders, readOnly, home, outsidePath, self, brokerPath, *agent, coverageDir); err != nil {
+	if err := verify(profile, folders, readOnly, home, outsidePath, self, brokerPath, agent, coverageDir, options.proxyPort); err != nil {
 		return fmt.Errorf("sandbox verification failed (command not started): %w", err)
 	}
-	command := exec.Command("/usr/bin/sandbox-exec", append([]string{"-p", profile, binary}, flags.Args()[1:]...)...)
+	extraEnv := []string{}
+	if options.prepare != nil {
+		extraEnv, err = options.prepare(home, brokerPath, self)
+		if err != nil {
+			return err
+		}
+	}
+	ctx := options.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	command := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", append([]string{"-p", profile, binary}, args...)...)
 	command.Env = sandboxEnv(home, brokerPath, coverageDir)
+	command.Env = append(command.Env, extraEnv...)
 	command.Dir = project
-	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if !options.nonInteractive {
+		command.Stdin = os.Stdin
+	}
+	command.Stdout, command.Stderr = os.Stdout, os.Stderr
 	if err := command.Run(); err != nil {
 		return err
 	}
@@ -245,6 +304,15 @@ func seatbeltProfile(folders, readOnly []string, home, binary, self, socket stri
 	for _, folder := range readOnly {
 		rules = append(rules, "(allow file-read* (subpath "+quote(folder)+"))")
 	}
+	seen := map[string]bool{}
+	for _, path := range append(append(append([]string(nil), folders...), readOnly...), home, binary, self) {
+		for parent := filepath.Dir(path); parent != "." && parent != "/"; parent = filepath.Dir(parent) {
+			if !seen[parent] {
+				rules = append(rules, "(allow file-read-metadata (literal "+quote(parent)+"))")
+				seen[parent] = true
+			}
+		}
+	}
 	return strings.Join(rules, "\n")
 }
 
@@ -284,7 +352,7 @@ type folderPermissions struct {
 	ReadOnly []string `json:"read_only"`
 }
 
-func verify(profile string, folders, readOnly []string, home, outside, self, socket, agent, coverageDir string) error {
+func verify(profile string, folders, readOnly []string, home, outside, self, socket, agent, coverageDir string, proxyPort ...int) error {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -301,6 +369,9 @@ func verify(profile string, folders, readOnly []string, home, outside, self, soc
 	}
 	probeArgs := []string{"-p", profile, self, "__probe", string(permissions),
 		home, outside, listener.Addr().String(), socket, other.Addr().String(), agent}
+	if len(proxyPort) > 0 && proxyPort[0] != 0 {
+		probeArgs = append(probeArgs, strconv.Itoa(proxyPort[0]))
+	}
 	command := exec.Command("/usr/bin/sandbox-exec", probeArgs...)
 	command.Env = sandboxEnv(home, socket, coverageDir)
 	output, err := command.CombinedOutput()
@@ -311,7 +382,7 @@ func verify(profile string, folders, readOnly []string, home, outside, self, soc
 }
 
 func probe(args []string) int {
-	if len(args) != 7 {
+	if len(args) != 7 && len(args) != 8 {
 		return 2
 	}
 	var permissions folderPermissions
@@ -355,6 +426,17 @@ func probe(args []string) int {
 	}
 	if err := deniedDial("tcp", tcp); err != nil {
 		return probeFailure("network denial was not confirmed", err)
+	}
+	if len(args) == 8 {
+		port, err := strconv.Atoi(args[7])
+		if err != nil {
+			return probeFailure("invalid proxy port", err)
+		}
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 500*time.Millisecond)
+		if err != nil {
+			return probeFailure("authorized model proxy unavailable", err)
+		}
+		conn.Close()
 	}
 	return 0
 }

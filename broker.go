@@ -88,14 +88,10 @@ func serveBrokerConnection(conn net.Conn, agent string, folders, readOnly []stri
 	}
 	switch request.Op {
 	case "status":
-		enabled, repositories, err := github.store.githubStatus(agent)
+		connections, repositories, err := github.store.status(agent)
 		if err != nil {
 			json.NewEncoder(conn).Encode(map[string]string{"error": "authorization state unavailable"})
 			return
-		}
-		connections := []string{}
-		if enabled {
-			connections = append(connections, githubConnection)
 		}
 		json.NewEncoder(conn).Encode(statusResponse{Agent: agent, Folder: folders[0],
 			Folders: folders, ReadOnlyFolders: readOnly, Connections: connections,

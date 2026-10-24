@@ -51,6 +51,12 @@ expect_failure "$app" run --agent codex --folder "$project" -- /bin/sh -c \
 expect_failure "$app" run --agent codex --folder "$project" -- /bin/sh -c \
   'exec "$1" __probe "$2" "$HOME" /etc/hosts invalid-address "$SANDBOX_BROKER_SOCKET" /private/tmp/1024-no-socket.sock codex' \
   sh "$app" "$folders"
+expect_failure "$app" run --agent codex --folder "$project" -- /bin/sh -c \
+  'exec "$1" __probe "$2" "$HOME" /etc/hosts 127.0.0.1:1 "$SANDBOX_BROKER_SOCKET" /private/tmp/1024-no-socket.sock codex invalid-port' \
+  sh "$app" "$folders"
+expect_failure "$app" run --agent codex --folder "$project" -- /bin/sh -c \
+  'exec "$1" __probe "$2" "$HOME" /etc/hosts 127.0.0.1:1 "$SANDBOX_BROKER_SOCKET" /private/tmp/1024-no-socket.sock codex 9' \
+  sh "$app" "$folders"
 
 go tool covdata merge -i="$tmp/unit,$coverdir" -o="$tmp/combined"
 if [[ -n "${COVERAGE_PROFILE:-}" ]]; then
