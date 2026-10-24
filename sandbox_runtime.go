@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-func run(args []string) error {
+func runSandbox(args []string) error {
 	if runtime.GOOS != "darwin" {
 		return errors.New("this prototype requires macOS Seatbelt")
 	}

@@ -45,7 +45,7 @@ func TestRunDirect(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS only")
 	}
-	if err := run([]string{"run", "--agent", "codex", "--folder", t.TempDir(),
+	if err := runSandbox([]string{"run", "--agent", "codex", "--folder", t.TempDir(),
 		"--read-only", t.TempDir(), "--", "/usr/bin/true"}); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestRunIsolation(t *testing.T) {
 }
 
 func TestInvalidAgentFailsBeforeLaunch(t *testing.T) {
-	err := run([]string{"run", "--agent", "other", "--folder", ".", "--", "/bin/echo"})
+	err := runSandbox([]string{"run", "--agent", "other", "--folder", ".", "--", "/bin/echo"})
 	if err == nil || !strings.Contains(err.Error(), "agent must be") {
 		t.Fatalf("expected agent validation error, got %v", err)
 	}
@@ -188,7 +188,7 @@ func TestProtectedSecondFolderFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = run([]string{"run", "--agent", "codex", "--folder", t.TempDir(),
+	err = runSandbox([]string{"run", "--agent", "codex", "--folder", t.TempDir(),
 		"--folder", home, "--", "/bin/echo"})
 	if err == nil || !strings.Contains(err.Error(), "protected host state") {
 		t.Fatalf("protected second folder was accepted: %v", err)
@@ -249,7 +249,7 @@ func TestFolderOverlapFails(t *testing.T) {
 	if err := validateFolderOverlap([]string{writable}, []string{"/dev"}); err == nil {
 		t.Fatal("accepted read-only folder containing writable device")
 	}
-	err := run([]string{"run", "--agent", "codex", "--folder", writable,
+	err := runSandbox([]string{"run", "--agent", "codex", "--folder", writable,
 		"--read-only", child, "--", "/bin/echo"})
 	if err == nil || !strings.Contains(err.Error(), "overlaps writable") {
 		t.Fatalf("overlap was accepted before launch: %v", err)
@@ -304,12 +304,12 @@ func TestRunFailsBeforeOrAfterLaunch(t *testing.T) {
 		{"missing directory", []string{"run", "--agent", "codex", "--folder", missing, "--", "/usr/bin/true"}, "folder"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := run(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if err := runSandbox(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("expected %q, got %v", tc.want, err)
 			}
 		})
 	}
-	if err := run([]string{"run", "--agent", "codex", "--folder", project,
+	if err := runSandbox([]string{"run", "--agent", "codex", "--folder", project,
 		"--", "/usr/bin/false"}); err == nil {
 		t.Fatal("nonzero child exit was discarded")
 	}
@@ -325,7 +325,7 @@ func TestRunRejectsUnavailableTempAndSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", file)
-	if err := run([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"}); err == nil {
+	if err := runSandbox([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"}); err == nil {
 		t.Fatal("unavailable temporary directory was accepted")
 	}
 	longTemp := filepath.Join(t.TempDir(), strings.Repeat("x", 80))
@@ -333,7 +333,7 @@ func TestRunRejectsUnavailableTempAndSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", longTemp)
-	if err := run([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"}); err == nil ||
+	if err := runSandbox([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"}); err == nil ||
 		!strings.Contains(err.Error(), "broker") {
 		t.Fatalf("overlong broker socket path did not fail closed: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestRunRejectsVerificationFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(project) })
 	t.Setenv("TMPDIR", project)
-	err = run([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"})
+	err = runSandbox([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"})
 	if err == nil || !strings.Contains(err.Error(), "sandbox verification failed") {
 		t.Fatalf("unsafe temporary root was accepted: %v", err)
 	}

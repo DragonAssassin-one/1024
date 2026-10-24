@@ -6,7 +6,7 @@
 
 **当前是原型，不是完整产品。** 已实现 macOS Seatbelt 文件/网络限制、Codex 单路径模型代理、无密钥 MCP、按仓库授权的 GitHub 文本文件只读工具，以及本机授权控制台。Codex 在线调用需要用户自行在宿主钥匙串录入有效 OpenAI API Key；Claude Code、dsh 和其他服务代理尚未接入。不要将当前版本当作生产级安全边界。
 
-[运行原型](#现状) · [架构](docs/architecture.md) · [安全边界](docs/security.md) · [测试与覆盖率](docs/testing.md) · [版本记录](CHANGELOG.md)
+[运行原型](#现状) · [架构与代码布局](docs/architecture.md) · [安全边界](docs/security.md) · [测试与覆盖率](docs/testing.md) · [版本记录](CHANGELOG.md)
 
 下文“它挡住什么”至“产品原则”描述**产品目标**；实际可用范围以“现状”和上述文档为准。安全放在第一位，好用放在第二位：最终应由用户选择和授权，沙箱内不填写 API Key、密码或 Token。
 

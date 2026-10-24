@@ -26,7 +26,7 @@ func main() {
 	case len(os.Args) > 1 && isAuthorizationCommand(os.Args[1]):
 		err = control(os.Args[1:])
 	default:
-		err = run(os.Args[1:])
+		err = runSandbox(os.Args[1:])
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "1024:", err)
