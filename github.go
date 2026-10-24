@@ -21,6 +21,7 @@ type githubService struct {
 	credential func() ([]byte, error)
 	client     *http.Client
 	endpoint   string
+	apiBase    string
 }
 
 func newGitHubService(store connectionStore) githubService {
@@ -28,6 +29,7 @@ func newGitHubService(store connectionStore) githubService {
 		store:      store,
 		credential: loadGitHubCredential,
 		endpoint:   "https://api.github.com/user",
+		apiBase:    "https://api.github.com",
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 			Transport: &http.Transport{

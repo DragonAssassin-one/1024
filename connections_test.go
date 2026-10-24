@@ -206,3 +206,33 @@ func TestControlRejectsUnavailableStateAndSaveFailure(t *testing.T) {
 		t.Fatal("authorization write failure was swallowed")
 	}
 }
+
+func TestControlRepositoryGrantAndRevoke(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	authorize := func(args ...string) error {
+		return controlWithDeps(args,
+			func() (connectionStore, error) { return store, nil },
+			func() (bool, error) { return true, nil },
+			func() error { return nil }, io.Discard)
+	}
+	if err := authorize("grant", "github", "Owner/Repo", "--agent", "codex"); err == nil {
+		t.Fatal("granted repository before enabling connection")
+	}
+	if err := authorize("connect", "github", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	if err := authorize("grant", "github", "Owner/Repo", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err := store.repositoryAllowed("codex", "owner/repo")
+	if err != nil || !allowed {
+		t.Fatalf("repository grant: %v, %v", allowed, err)
+	}
+	if err := authorize("revoke", "github", "OWNER/REPO", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err = store.repositoryAllowed("codex", "owner/repo")
+	if err != nil || allowed {
+		t.Fatalf("repository revocation: %v, %v", allowed, err)
+	}
+}

@@ -31,5 +31,15 @@ func newMCPServer(socket string) *mcp.Server {
 		identity, err := readIdentity(socket)
 		return nil, identity, err
 	})
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "github_read_file",
+		Description: "Read a UTF-8 text file up to 64 KiB from a GitHub repository authorized for this agent.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input struct {
+		Repository string `json:"repository" jsonschema:"GitHub owner/repository"`
+		Path       string `json:"path" jsonschema:"Relative repository file path"`
+	}) (*mcp.CallToolResult, githubFile, error) {
+		file, err := readGitHubFile(socket, input.Repository, input.Path)
+		return nil, file, err
+	})
 	return server
 }

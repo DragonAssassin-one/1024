@@ -36,7 +36,8 @@ func main() {
 		}
 		return
 	}
-	if len(os.Args) > 1 && (os.Args[1] == "credential" || os.Args[1] == "connect" || os.Args[1] == "disconnect") {
+	if len(os.Args) > 1 && (os.Args[1] == "credential" || os.Args[1] == "connect" ||
+		os.Args[1] == "disconnect" || os.Args[1] == "grant" || os.Args[1] == "revoke") {
 		if err := control(os.Args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, "1024:", err)
 			os.Exit(1)

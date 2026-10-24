@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -50,7 +52,7 @@ func TestMCPInsideSandbox(t *testing.T) {
 	}
 	defer session.Close()
 	tools, err := session.ListTools(ctx, nil)
-	if err != nil || len(tools.Tools) != 2 {
+	if err != nil || len(tools.Tools) != 3 {
 		t.Fatalf("tools: %+v, %v", tools, err)
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "sandbox_status"})
@@ -77,10 +79,17 @@ func TestMCPInsideSandbox(t *testing.T) {
 func TestMCPToolAuthorizationChangesDuringSession(t *testing.T) {
 	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/owner/repo/contents/README.md" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"type": "file", "encoding": "base64", "size": 5,
+				"content": base64.StdEncoding.EncodeToString([]byte("hello")),
+			})
+			return
+		}
 		w.Write([]byte(`{"login":"coverage-user","id":42}`))
 	}))
 	defer api.Close()
-	service := githubService{store: store, endpoint: api.URL, client: api.Client(),
+	service := githubService{store: store, endpoint: api.URL, apiBase: api.URL, client: api.Client(),
 		credential: func() ([]byte, error) { return []byte("test-token"), nil }}
 	home, err := os.MkdirTemp("/private/tmp", "1024-mcp-")
 	if err != nil {
@@ -116,6 +125,29 @@ func TestMCPToolAuthorizationChangesDuringSession(t *testing.T) {
 	}
 	if err := store.set("codex", true); err != nil {
 		t.Fatal(err)
+	}
+	fileArgs := map[string]any{"repository": "owner/repo", "path": "README.md"}
+	deniedFile, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "github_read_file", Arguments: fileArgs})
+	if err != nil || !deniedFile.IsError {
+		t.Fatalf("ungranted repository: %+v, %v", deniedFile, err)
+	}
+	if err := store.setRepository("codex", "owner/repo", true); err != nil {
+		t.Fatal(err)
+	}
+	allowedFile, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "github_read_file", Arguments: fileArgs})
+	if err != nil || allowedFile.IsError {
+		t.Fatalf("granted repository: %+v, %v", allowedFile, err)
+	}
+	fileData, ok := allowedFile.StructuredContent.(map[string]any)
+	if !ok || fileData["content"] != "hello" {
+		t.Fatalf("unexpected repository content: %#v", allowedFile.StructuredContent)
+	}
+	if err := store.setRepository("codex", "owner/repo", false); err != nil {
+		t.Fatal(err)
+	}
+	revokedFile, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "github_read_file", Arguments: fileArgs})
+	if err != nil || !revokedFile.IsError {
+		t.Fatalf("revoked repository: %+v, %v", revokedFile, err)
 	}
 	identity, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "github_identity"})
 	if err != nil || identity.IsError {
