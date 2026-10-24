@@ -20,5 +20,12 @@ func runMCP(ctx context.Context) error {
 		status, err := readStatus(socket)
 		return nil, status, err
 	})
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "github_identity",
+		Description: "Read the authenticated GitHub login and numeric ID if this agent's GitHub connection is enabled.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, githubIdentity, error) {
+		identity, err := readIdentity(socket)
+		return nil, identity, err
+	})
 	return server.Run(ctx, &mcp.StdioTransport{})
 }

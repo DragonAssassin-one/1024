@@ -34,6 +34,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && (os.Args[1] == "credential" || os.Args[1] == "connect" || os.Args[1] == "disconnect") {
+		if err := control(os.Args[1:]); err != nil {
+			fmt.Fprintln(os.Stderr, "1024:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "1024:", err)
 		var exit *exec.ExitError
@@ -67,8 +74,8 @@ func run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("folder: %w", err)
 	}
-	if project == "/" {
-		return errors.New("refusing to authorize the filesystem root")
+	if err := validateProject(project); err != nil {
+		return err
 	}
 	binary, err := exec.LookPath(flags.Arg(0))
 	if err != nil {
@@ -107,7 +114,11 @@ func run(args []string) error {
 	outside.Close()
 	defer os.Remove(outsidePath)
 
-	broker, brokerPath, err := startBroker(home, *agent, project)
+	store, err := defaultConnectionStore()
+	if err != nil {
+		return err
+	}
+	broker, brokerPath, err := startBroker(home, *agent, project, newGitHubService(store))
 	if err != nil {
 		return fmt.Errorf("broker: %w", err)
 	}
@@ -212,7 +223,7 @@ func probe(args []string) int {
 		return probeFailure("outside write was not denied", err)
 	}
 	status, err := readStatus(args[4])
-	if err != nil || status.Agent != args[6] || status.Folder != args[0] || len(status.Connections) != 0 {
+	if err != nil || status.Agent != args[6] || status.Folder != args[0] {
 		return probeFailure("host status channel is unavailable or incorrect", err)
 	}
 	if err := deniedDial("unix", args[5]); err != nil {
