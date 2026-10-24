@@ -51,3 +51,45 @@ func TestSandboxExecSmoke(t *testing.T) {
 		t.Fatalf("unexpected output: %q", output)
 	}
 }
+
+func TestRunIsolation(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	binary := filepath.Join(t.TempDir(), "1024")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v: %s", err, output)
+	}
+	project := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("private"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(project, "link")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SECRET_MARKER", "must-not-be-inherited")
+	command := exec.Command(binary, "run", "--agent", "codex", "--folder", project, "--",
+		"/bin/sh", "-c", `set -e; printf allowed > result; test -r result; ! test -r "$1"; ! test -r link; ! /bin/cat link >/dev/null 2>&1; ! /usr/bin/env | /usr/bin/grep -q SECRET_MARKER`,
+		"sh", outside)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run: %v: %s", err, output)
+	}
+	content, err := os.ReadFile(filepath.Join(project, "result"))
+	if err != nil || string(content) != "allowed" {
+		t.Fatalf("authorized write failed: %q, %v", content, err)
+	}
+	content, err = os.ReadFile(outside)
+	if err != nil || string(content) != "private" {
+		t.Fatalf("outside file changed: %q, %v", content, err)
+	}
+}
+
+func TestInvalidAgentFailsBeforeLaunch(t *testing.T) {
+	err := run([]string{"run", "--agent", "other", "--folder", ".", "--", "/bin/echo"})
+	if err == nil || !strings.Contains(err.Error(), "agent must be") {
+		t.Fatalf("expected agent validation error, got %v", err)
+	}
+}
