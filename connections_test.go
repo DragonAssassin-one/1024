@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -89,5 +92,54 @@ func TestControlRejectsInvalidInput(t *testing.T) {
 		if err := control(args); err == nil {
 			t.Fatalf("accepted invalid control command: %v", args)
 		}
+	}
+}
+
+func TestControlConnectionLifecycle(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "state", "connections.json")}
+	var output bytes.Buffer
+	saved := false
+	exists := false
+	deps := func(args ...string) error {
+		return controlWithDeps(args,
+			func() (connectionStore, error) { return store, nil },
+			func() (bool, error) { return exists, nil },
+			func() error { saved = true; return nil }, &output)
+	}
+	if err := deps("credential", "github"); err != nil || !saved {
+		t.Fatalf("credential: %v, saved=%v", err, saved)
+	}
+	if err := deps("connect", "github", "--agent", "codex"); err == nil {
+		t.Fatal("connected without a credential")
+	}
+	exists = true
+	if err := deps("connect", "github", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := store.enabled("codex")
+	if err != nil || !enabled {
+		t.Fatalf("connection was not enabled: %v, %v", enabled, err)
+	}
+	if err := deps("disconnect", "github", "--agent", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	enabled, err = store.enabled("codex")
+	if err != nil || enabled || !bytes.Contains(output.Bytes(), []byte("GitHub disabled")) {
+		t.Fatalf("connection was not disabled: %v, %v, %s", enabled, err, output.String())
+	}
+}
+
+func TestControlFailsClosedOnCredentialLookup(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	err := controlWithDeps([]string{"connect", "github", "--agent", "claude"},
+		func() (connectionStore, error) { return store, nil },
+		func() (bool, error) { return false, errors.New("keychain unavailable") },
+		func() error { t.Fatal("credential save was called"); return nil }, io.Discard)
+	if err == nil {
+		t.Fatal("connected after keychain lookup failure")
+	}
+	enabled, err := store.enabled("claude")
+	if err != nil || enabled {
+		t.Fatalf("authorization was changed: %v, %v", enabled, err)
 	}
 }

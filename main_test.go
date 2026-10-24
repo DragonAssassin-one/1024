@@ -30,6 +30,23 @@ func TestProfileScope(t *testing.T) {
 	}
 }
 
+func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "__probe" {
+		os.Exit(probe(os.Args[2:]))
+	}
+	os.Exit(m.Run())
+}
+
+func TestRunDirect(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	if err := run([]string{"run", "--agent", "codex", "--folder", t.TempDir(),
+		"--read-only", t.TempDir(), "--", "/usr/bin/true"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSandboxExecSmoke(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("macOS only")

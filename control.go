@@ -3,23 +3,30 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
 )
 
 func control(args []string) error {
+	return controlWithDeps(args, defaultConnectionStore, githubCredentialExists, saveGitHubCredential, os.Stdout)
+}
+
+func controlWithDeps(args []string, storeForUser func() (connectionStore, error),
+	credentialExists func() (bool, error), saveCredential func() error, output io.Writer) error {
 	if len(args) == 2 && args[0] == "credential" && args[1] == githubConnection {
-		return saveGitHubCredential()
+		return saveCredential()
 	}
 	if len(args) != 4 || (args[0] != "connect" && args[0] != "disconnect") ||
 		args[1] != githubConnection || args[2] != "--agent" || !validAgent(args[3]) {
 		return errors.New("usage: 1024 credential github | connect|disconnect github --agent claude|codex|dsh")
 	}
-	store, err := defaultConnectionStore()
+	store, err := storeForUser()
 	if err != nil {
 		return err
 	}
 	enabled := args[0] == "connect"
 	if enabled {
-		exists, err := githubCredentialExists()
+		exists, err := credentialExists()
 		if err != nil {
 			return err
 		}
@@ -34,6 +41,6 @@ func control(args []string) error {
 	if enabled {
 		state = "enabled"
 	}
-	fmt.Printf("%s: GitHub %s\n", args[3], state)
+	fmt.Fprintf(output, "%s: GitHub %s\n", args[3], state)
 	return nil
 }
