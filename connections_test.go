@@ -143,3 +143,66 @@ func TestControlFailsClosedOnCredentialLookup(t *testing.T) {
 		t.Fatalf("authorization was changed: %v, %v", enabled, err)
 	}
 }
+
+func TestConnectionStoreRejectsInvalidFilesystemState(t *testing.T) {
+	root := t.TempDir()
+	parentFile := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(parentFile, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := (connectionStore{path: filepath.Join(parentFile, "connections.json")}).set("codex", true); err == nil {
+		t.Fatal("accepted a non-directory state parent")
+	}
+	lockDir := filepath.Join(root, "locked", "connections.lock")
+	if err := os.MkdirAll(lockDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := (connectionStore{path: filepath.Join(root, "locked", "connections.json")}).set("codex", true); err == nil {
+		t.Fatal("accepted an unusable lock file")
+	}
+	path := filepath.Join(root, "null.json")
+	if err := os.WriteFile(path, []byte("null"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, err := (connectionStore{path: path}).enabled("codex"); err == nil || enabled {
+		t.Fatalf("null state did not fail closed: %v, %v", enabled, err)
+	}
+	loop := filepath.Join(root, "loop.json")
+	if err := os.Symlink("loop.json", loop); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, err := (connectionStore{path: loop}).enabled("codex"); err == nil || enabled {
+		t.Fatalf("unreadable state did not fail closed: %v, %v", enabled, err)
+	}
+	if err := (connectionStore{path: filepath.Join(root, "valid.json")}).set("unknown", true); err == nil {
+		t.Fatal("invalid agent was accepted")
+	}
+}
+
+func TestControlRejectsUnavailableStateAndSaveFailure(t *testing.T) {
+	failure := errors.New("host state unavailable")
+	if err := controlWithDeps([]string{"connect", "github", "--agent", "codex"},
+		func() (connectionStore, error) { return connectionStore{}, failure },
+		func() (bool, error) { t.Fatal("keychain checked despite missing state"); return false, nil },
+		func() error { return nil }, io.Discard); !errors.Is(err, failure) {
+		t.Fatalf("expected host state failure, got %v", err)
+	}
+	if err := controlWithDeps([]string{"credential", "github"},
+		func() (connectionStore, error) { return connectionStore{}, nil },
+		func() (bool, error) { return false, nil },
+		func() error { return failure }, io.Discard); !errors.Is(err, failure) {
+		t.Fatalf("credential failure was swallowed: %v", err)
+	}
+	parent := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(parent, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := controlWithDeps([]string{"disconnect", "github", "--agent", "codex"},
+		func() (connectionStore, error) {
+			return connectionStore{path: filepath.Join(parent, "connections.json")}, nil
+		},
+		func() (bool, error) { t.Fatal("disconnect read keychain"); return false, nil },
+		func() error { return nil }, io.Discard); err == nil {
+		t.Fatal("authorization write failure was swallowed")
+	}
+}

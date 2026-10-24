@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGitHubIdentityChecksAuthorizationEachCall(t *testing.T) {
@@ -96,5 +98,41 @@ func TestGitHubIdentityRejectsRedirect(t *testing.T) {
 	_, err := service.identity(context.Background(), "codex")
 	if err == nil || redirected || strings.Contains(err.Error(), "test-secret") {
 		t.Fatalf("redirect was not safely rejected: %v", err)
+	}
+}
+
+func TestGitHubIdentityRejectsUnavailableCredentialAndInvalidResponse(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	if err := store.set("codex", true); err != nil {
+		t.Fatal(err)
+	}
+	service := githubService{store: store, credential: func() ([]byte, error) {
+		return nil, errors.New("private keychain detail")
+	}}
+	if _, err := service.identity(context.Background(), "codex"); err == nil ||
+		strings.Contains(err.Error(), "private keychain detail") {
+		t.Fatalf("credential failure leaked detail: %v", err)
+	}
+	for _, body := range []string{"not json", `{"login":"","id":42}`, `{"login":"user","id":0}`} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(body))
+		}))
+		service.client = server.Client()
+		service.endpoint = server.URL
+		service.credential = func() ([]byte, error) { return []byte("test-token"), nil }
+		if identity, err := service.identity(context.Background(), "codex"); err == nil ||
+			identity.Login != "" {
+			t.Fatalf("accepted invalid body %q: %+v, %v", body, identity, err)
+		}
+		server.Close()
+	}
+	service.client = &http.Client{Timeout: time.Second}
+	service.endpoint = "http://127.0.0.1:1/"
+	if _, err := service.identity(context.Background(), "codex"); err == nil {
+		t.Fatal("network failure was swallowed")
+	}
+	service.endpoint = ":invalid-url"
+	if _, err := service.identity(context.Background(), "codex"); err == nil {
+		t.Fatal("invalid endpoint was accepted")
 	}
 }
