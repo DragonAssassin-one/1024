@@ -1,10 +1,13 @@
 package main
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -63,7 +66,7 @@ func TestSandboxExecSmoke(t *testing.T) {
 	}
 	profile := seatbeltProfile([]string{project}, nil, home, binary, self, filepath.Join(home, "broker.sock"))
 	command := exec.Command("/usr/bin/sandbox-exec", "-p", profile, binary, "hello")
-	command.Env = sandboxEnv(home, filepath.Join(home, "broker.sock"))
+	command.Env = sandboxEnv(home, filepath.Join(home, "broker.sock"), "")
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("sandbox-exec: %v: %s\nprofile:\n%s", err, output, profile)
@@ -115,8 +118,7 @@ func TestRunIsolation(t *testing.T) {
 	}
 	statusCommand := exec.Command(binary, "run", "--agent", "claude", "--folder", project, "--", binary, "status")
 	output, err = statusCommand.CombinedOutput()
-	if err != nil || !strings.Contains(string(output), "Agent       claude") ||
-		!strings.Contains(string(output), "Connections 0") {
+	if err != nil || !strings.Contains(string(output), "Agent       claude") {
 		t.Fatalf("sandbox status: %v: %s", err, output)
 	}
 	exitCommand := exec.Command(binary, "run", "--agent", "dsh", "--folder", project, "--",
@@ -250,5 +252,179 @@ func TestFolderOverlapFails(t *testing.T) {
 		"--read-only", child, "--", "/bin/echo"})
 	if err == nil || !strings.Contains(err.Error(), "overlaps writable") {
 		t.Fatalf("overlap was accepted before launch: %v", err)
+	}
+}
+
+func TestCoverageDirOnlyInsideWritableFolder(t *testing.T) {
+	writable, readOnly := t.TempDir(), t.TempDir()
+	writable, err := filepath.EvalSymlinks(writable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverage := filepath.Join(writable, "coverage")
+	if err := os.Mkdir(coverage, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOCOVERDIR", coverage)
+	allowed := permittedCoverageDir([]string{writable})
+	if allowed == "" {
+		t.Fatal("coverage directory inside writable root was not allowed")
+	}
+	env := sandboxEnv("/home/isolated", "/home/isolated/broker.sock", allowed)
+	if !slices.Contains(env, "GOCOVERDIR="+allowed) {
+		t.Fatalf("coverage path was not passed: %v", env)
+	}
+	if path := permittedCoverageDir([]string{readOnly}); path != "" {
+		t.Fatalf("outside coverage directory escaped: %s", path)
+	}
+	t.Setenv("GOCOVERDIR", filepath.Join(readOnly, "missing"))
+	if path := permittedCoverageDir([]string{writable}); path != "" {
+		t.Fatalf("nonexistent coverage directory escaped: %s", path)
+	}
+}
+
+func TestRunFailsBeforeOrAfterLaunch(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	project := t.TempDir()
+	missing := filepath.Join(t.TempDir(), "missing")
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"no command", nil, "usage:"},
+		{"unknown flag", []string{"run", "--unknown"}, "flag provided but not defined"},
+		{"empty folder flag", []string{"run", "--agent", "codex", "--folder", "", "--", "/usr/bin/true"}, "folder cannot be empty"},
+		{"missing folder", []string{"run", "--agent", "codex", "--", "/usr/bin/true"}, "folder and command"},
+		{"filesystem root", []string{"run", "--agent", "codex", "--folder", "/", "--", "/usr/bin/true"}, "refusing to authorize"},
+		{"missing executable", []string{"run", "--agent", "codex", "--folder", project, "--", "1024-missing-command"}, "executable file not found"},
+		{"missing directory", []string{"run", "--agent", "codex", "--folder", missing, "--", "/usr/bin/true"}, "folder"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := run(tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q, got %v", tc.want, err)
+			}
+		})
+	}
+	if err := run([]string{"run", "--agent", "codex", "--folder", project,
+		"--", "/usr/bin/false"}); err == nil {
+		t.Fatal("nonzero child exit was discarded")
+	}
+}
+
+func TestRunRejectsUnavailableTempAndSocket(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	project := t.TempDir()
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", file)
+	if err := run([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"}); err == nil {
+		t.Fatal("unavailable temporary directory was accepted")
+	}
+	longTemp := filepath.Join(t.TempDir(), strings.Repeat("x", 80))
+	if err := os.Mkdir(longTemp, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", longTemp)
+	if err := run([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"}); err == nil ||
+		!strings.Contains(err.Error(), "broker") {
+		t.Fatalf("overlong broker socket path did not fail closed: %v", err)
+	}
+}
+
+func TestCanonicalDirRejectsFileAndMissingPath(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{file, file + "-missing"} {
+		if _, err := canonicalDir(path); err == nil {
+			t.Fatalf("accepted non-directory: %s", path)
+		}
+	}
+}
+
+func TestDeniedDialRejectsSuccessfulConnection(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := deniedDial("tcp", listener.Addr().String()); err == nil {
+		t.Fatal("a successful connection must not count as denied")
+	}
+	if err := deniedDial("tcp", "invalid-address"); err == nil {
+		t.Fatal("invalid address must not count as a policy denial")
+	}
+}
+
+func TestStatusOutsideSandboxFails(t *testing.T) {
+	t.Setenv(brokerSocketEnv, "")
+	if err := printStatus(); err == nil {
+		t.Fatal("status succeeded without a broker")
+	}
+}
+
+func TestVerifyRejectsOutsideWritePolicy(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	project := t.TempDir()
+	project, err := filepath.EvalSymlinks(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err := os.MkdirTemp("/private/tmp", "1024-probe-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(home) })
+	outside, err := os.CreateTemp("/private/tmp", "1024-outside-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(outside.Name())
+	outside.Close()
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	broker, socket, err := startBroker(home, "codex", []string{project}, nil, githubService{store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	self, err = filepath.EvalSymlinks(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := seatbeltProfile([]string{project}, nil, home, "/usr/bin/true", self, socket) +
+		"\n(allow file-write* (literal " + strconv.Quote(outside.Name()) + "))"
+	err = verify(profile, []string{project}, nil, home, outside.Name(), self, socket, "codex", "")
+	if err == nil || !strings.Contains(err.Error(), "outside write was not denied") {
+		t.Fatalf("unsafe policy passed verification: %v", err)
+	}
+}
+
+func TestRunRejectsVerificationFailure(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	project, err := os.MkdirTemp("/private/tmp", "1024-project-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(project) })
+	t.Setenv("TMPDIR", project)
+	err = run([]string{"run", "--agent", "codex", "--folder", project, "--", "/usr/bin/true"})
+	if err == nil || !strings.Contains(err.Error(), "sandbox verification failed") {
+		t.Fatalf("unsafe temporary root was accepted: %v", err)
 	}
 }

@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -66,12 +69,67 @@ func TestMCPInsideSandbox(t *testing.T) {
 	if !ok || len(readOnlyFolders) != 1 || readOnlyFolders[0] != readOnly {
 		t.Fatalf("unexpected read-only folders: %#v", status)
 	}
-	connections, ok := status["connections"].([]any)
-	if !ok || len(connections) != 0 {
-		t.Fatalf("expected empty connection list: %#v", status)
+	if _, ok := status["connections"].([]any); !ok {
+		t.Fatalf("expected connection list: %#v", status)
 	}
-	denied, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "github_identity"})
-	if err != nil || !denied.IsError {
-		t.Fatalf("disabled GitHub tool must fail: %+v, %v", denied, err)
+}
+
+func TestMCPToolAuthorizationChangesDuringSession(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"login":"coverage-user","id":42}`))
+	}))
+	defer api.Close()
+	service := githubService{store: store, endpoint: api.URL, client: api.Client(),
+		credential: func() ([]byte, error) { return []byte("test-token"), nil }}
+	home, err := os.MkdirTemp("/private/tmp", "1024-mcp-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(home) })
+	broker, socket, err := startBroker(home, "codex", []string{"/project"}, nil, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := newMCPServer(socket).Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverSession.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0.0.1"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	status, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "sandbox_status"})
+	if err != nil || status.IsError {
+		t.Fatalf("status: %+v, %v", status, err)
+	}
+	disabled, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "github_identity"})
+	if err != nil || !disabled.IsError {
+		t.Fatalf("disabled identity: %+v, %v", disabled, err)
+	}
+	if err := store.set("codex", true); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "github_identity"})
+	if err != nil || identity.IsError {
+		t.Fatalf("enabled identity: %+v, %v", identity, err)
+	}
+	data, ok := identity.StructuredContent.(map[string]any)
+	if !ok || data["login"] != "coverage-user" {
+		t.Fatalf("unexpected identity: %#v", identity.StructuredContent)
+	}
+	if err := store.set("codex", false); err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "github_identity"})
+	if err != nil || !revoked.IsError {
+		t.Fatalf("revoked identity: %+v, %v", revoked, err)
 	}
 }

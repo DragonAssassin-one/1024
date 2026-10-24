@@ -137,11 +137,12 @@ func run(args []string) error {
 	}
 	defer broker.Close()
 	profile := seatbeltProfile(folders, readOnly, home, binary, self, brokerPath)
-	if err := verify(profile, folders, readOnly, home, outsidePath, self, brokerPath, *agent); err != nil {
+	coverageDir := permittedCoverageDir(folders)
+	if err := verify(profile, folders, readOnly, home, outsidePath, self, brokerPath, *agent, coverageDir); err != nil {
 		return fmt.Errorf("sandbox verification failed (command not started): %w", err)
 	}
 	command := exec.Command("/usr/bin/sandbox-exec", append([]string{"-p", profile, binary}, flags.Args()[1:]...)...)
-	command.Env = sandboxEnv(home, brokerPath)
+	command.Env = sandboxEnv(home, brokerPath, coverageDir)
 	command.Dir = project
 	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := command.Run(); err != nil {
@@ -246,14 +247,35 @@ func seatbeltProfile(folders, readOnly []string, home, binary, self, socket stri
 	return strings.Join(rules, "\n")
 }
 
-func sandboxEnv(home, socket string) []string {
-	return []string{
+func permittedCoverageDir(folders []string) string {
+	path := os.Getenv("GOCOVERDIR")
+	if path == "" {
+		return ""
+	}
+	path, err := canonicalDir(path)
+	if err != nil {
+		return ""
+	}
+	for _, folder := range folders {
+		if containsPath(folder, path) {
+			return path
+		}
+	}
+	return ""
+}
+
+func sandboxEnv(home, socket, coverageDir string) []string {
+	env := []string{
 		"HOME=" + home,
 		"TMPDIR=" + home,
 		"PATH=/usr/bin:/bin",
 		"LANG=C",
 		brokerSocketEnv + "=" + socket,
 	}
+	if coverageDir != "" {
+		env = append(env, "GOCOVERDIR="+coverageDir)
+	}
+	return env
 }
 
 type folderPermissions struct {
@@ -261,7 +283,7 @@ type folderPermissions struct {
 	ReadOnly []string `json:"read_only"`
 }
 
-func verify(profile string, folders, readOnly []string, home, outside, self, socket, agent string) error {
+func verify(profile string, folders, readOnly []string, home, outside, self, socket, agent, coverageDir string) error {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -279,7 +301,7 @@ func verify(profile string, folders, readOnly []string, home, outside, self, soc
 	probeArgs := []string{"-p", profile, self, "__probe", string(permissions),
 		home, outside, listener.Addr().String(), socket, other.Addr().String(), agent}
 	command := exec.Command("/usr/bin/sandbox-exec", probeArgs...)
-	command.Env = sandboxEnv(home, socket)
+	command.Env = sandboxEnv(home, socket, coverageDir)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
