@@ -10,7 +10,7 @@ import (
 )
 
 func TestProfileScope(t *testing.T) {
-	profile := seatbeltProfile("/tmp/project", "/tmp/home", "/bin/sh", "/tmp/1024", "/tmp/home/broker.sock")
+	profile := seatbeltProfile([]string{"/tmp/project"}, "/tmp/home", "/bin/sh", "/tmp/1024", "/tmp/home/broker.sock")
 	for _, rule := range []string{
 		"(deny default)",
 		"(subpath \"/tmp/project\")",
@@ -42,7 +42,7 @@ func TestSandboxExecSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile := seatbeltProfile(project, home, binary, self, filepath.Join(home, "broker.sock"))
+	profile := seatbeltProfile([]string{project}, home, binary, self, filepath.Join(home, "broker.sock"))
 	command := exec.Command("/usr/bin/sandbox-exec", "-p", profile, binary, "hello")
 	command.Env = sandboxEnv(home, filepath.Join(home, "broker.sock"))
 	output, err := command.CombinedOutput()
@@ -105,5 +105,63 @@ func TestInvalidAgentFailsBeforeLaunch(t *testing.T) {
 	err := run([]string{"run", "--agent", "other", "--folder", ".", "--", "/bin/echo"})
 	if err == nil || !strings.Contains(err.Error(), "agent must be") {
 		t.Fatalf("expected agent validation error, got %v", err)
+	}
+}
+
+func TestRunMultipleFolders(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	binary := filepath.Join(t.TempDir(), "1024")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v: %s", err, output)
+	}
+	first, second, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	secondCanonical, err := filepath.EvalSymlinks(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsideCanonical, err := filepath.EvalSymlinks(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(first, alias); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(binary, "run", "--agent", "codex",
+		"--folder", first, "--folder", second, "--folder", alias, "--",
+		"/bin/sh", "-c", `set -e; printf first > result; printf second > "$1/result"; test -r "$1/result"; ! test -r "$2"`,
+		"sh", secondCanonical, outsideCanonical)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("multi-folder run: %v: %s", err, output)
+	}
+	for path, expected := range map[string]string{first: "first", second: "second"} {
+		content, err := os.ReadFile(filepath.Join(path, "result"))
+		if err != nil || string(content) != expected {
+			t.Fatalf("authorized folder %s: %q, %v", path, content, err)
+		}
+	}
+	statusCommand := exec.Command(binary, "run", "--agent", "codex",
+		"--folder", first, "--folder", second, "--folder", alias, "--", binary, "status")
+	output, err := statusCommand.CombinedOutput()
+	if err != nil || strings.Count(string(output), "Folder      ") != 2 {
+		t.Fatalf("folder status was not deduplicated: %v: %s", err, output)
+	}
+}
+
+func TestProtectedSecondFolderFails(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = run([]string{"run", "--agent", "codex", "--folder", t.TempDir(),
+		"--folder", home, "--", "/bin/echo"})
+	if err == nil || !strings.Contains(err.Error(), "protected host state") {
+		t.Fatalf("protected second folder was accepted: %v", err)
 	}
 }

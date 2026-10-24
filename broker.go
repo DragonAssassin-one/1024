@@ -18,6 +18,7 @@ const brokerSocketEnv = "SANDBOX_BROKER_SOCKET"
 type statusResponse struct {
 	Agent       string   `json:"agent"`
 	Folder      string   `json:"folder"`
+	Folders     []string `json:"folders"`
 	Connections []string `json:"connections"`
 }
 
@@ -27,7 +28,7 @@ type broker struct {
 	active   sync.WaitGroup
 }
 
-func startBroker(home, agent, folder string, github githubService) (*broker, string, error) {
+func startBroker(home, agent string, folders []string, github githubService) (*broker, string, error) {
 	path := filepath.Join(home, "broker.sock")
 	listener, err := net.Listen("unix", path)
 	if err != nil {
@@ -52,7 +53,7 @@ func startBroker(home, agent, folder string, github githubService) (*broker, str
 				go func() {
 					defer b.active.Done()
 					defer func() { <-limit }()
-					serveBrokerConnection(conn, agent, folder, github)
+					serveBrokerConnection(conn, agent, folders, github)
 				}()
 			default:
 				conn.Close()
@@ -68,7 +69,7 @@ func (b *broker) Close() {
 	b.active.Wait()
 }
 
-func serveBrokerConnection(conn net.Conn, agent, folder string, github githubService) {
+func serveBrokerConnection(conn net.Conn, agent string, folders []string, github githubService) {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(12 * time.Second))
 	var request struct {
@@ -90,7 +91,8 @@ func serveBrokerConnection(conn net.Conn, agent, folder string, github githubSer
 		if enabled {
 			connections = append(connections, githubConnection)
 		}
-		json.NewEncoder(conn).Encode(statusResponse{agent, folder, connections})
+		json.NewEncoder(conn).Encode(statusResponse{Agent: agent, Folder: folders[0],
+			Folders: folders, Connections: connections})
 	case "github_identity":
 		identity, err := github.identity(context.Background(), agent)
 		if err != nil {
@@ -108,7 +110,8 @@ func readStatus(path string) (statusResponse, error) {
 	if err := brokerCall(path, "status", &status); err != nil {
 		return status, err
 	}
-	if status.Agent == "" || status.Folder == "" {
+	if status.Agent == "" || status.Folder == "" || len(status.Folders) == 0 ||
+		status.Folders[0] != status.Folder {
 		return status, errors.New("invalid broker response")
 	}
 	return status, nil
@@ -159,7 +162,10 @@ func printStatus() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Agent       %s\nFolder      %s\nConnections %d\n",
-		status.Agent, status.Folder, len(status.Connections))
+	fmt.Printf("Agent       %s\n", status.Agent)
+	for _, folder := range status.Folders {
+		fmt.Printf("Folder      %s\n", folder)
+	}
+	fmt.Printf("Connections %d\n", len(status.Connections))
 	return nil
 }

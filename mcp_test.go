@@ -54,6 +54,10 @@ func TestMCPInsideSandbox(t *testing.T) {
 	if !ok || status["agent"] != "codex" || status["folder"] != project {
 		t.Fatalf("unexpected status: %#v", result.StructuredContent)
 	}
+	folders, ok := status["folders"].([]any)
+	if !ok || len(folders) != 1 || folders[0] != project {
+		t.Fatalf("unexpected authorized folders: %#v", status)
+	}
 	connections, ok := status["connections"].([]any)
 	if !ok || len(connections) != 0 {
 		t.Fatalf("expected empty connection list: %#v", status)

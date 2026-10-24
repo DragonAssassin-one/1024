@@ -70,11 +70,14 @@ Agent     Claude Code
 ```sh
 go build -o 1024 .
 ./1024 run --agent codex --folder /path/to/project -- /bin/sh
+./1024 run --agent codex --folder /path/to/project --folder /path/to/other -- /bin/sh
 ./1024 run --agent codex --folder "$PWD" -- "$PWD/1024" status
 ./1024 run --agent codex --folder "$PWD" -- "$PWD/1024" mcp
 ```
 
-需要 Go 1.25 或更新版本。`--agent` 目前只是本次运行的身份标签，不会自动安装或配置 Agent。每次运行会创建独立的临时 HOME，清空继承的环境变量，只允许读写指定目录和临时 HOME，允许读取启动所需的系统文件，默认拒绝其他文件和网络。唯一的例外是本次运行专属的 Unix socket：沙箱内的 `1024 status` 通过它向沙箱外进程读取 Agent、授权目录和空的连接清单。它不接收任意命令，不传输凭证，也不允许连接其他 Unix socket 或 TCP 地址。
+需要 Go 1.25 或更新版本。`--agent` 目前只是本次运行的身份标签，不会自动安装或配置 Agent。可以重复使用 `--folder` 授权多个项目，第一个目录是命令的工作目录；每个目录先解析成真实路径、检查宿主状态保护，再加入沙箱权限，相同真实路径只授权一次。`status` 和 `sandbox_status` 会列出这些真实路径；在沙箱内访问经符号链接或 `/var` 别名传入的目录时，应使用状态中显示的路径。
+
+每次运行会创建独立的临时 HOME，清空继承的环境变量，只允许读写指定目录和临时 HOME，允许读取启动所需的系统文件，默认拒绝其他文件和网络。唯一的例外是本次运行专属的 Unix socket：沙箱内的 `1024 status` 通过它向沙箱外进程读取 Agent、授权目录和已启用的连接名称。它不接收任意命令，不传输凭证，也不允许连接其他 Unix socket 或 TCP 地址。
 
 `1024 mcp` 是遵循 MCP stdio 协议的入口，提供 `sandbox_status` 和下述按连接开关授权的 `github_identity` 只读工具。它必须在本次 `run` 创建的沙箱内启动；第三个命令可用于 MCP 客户端测试，但不代表三款 Agent 已自动配置。沙箱内的 MCP 配置只需指定这个可执行文件和 `mcp` 参数，不需要密钥字段。
 
