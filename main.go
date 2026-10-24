@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -56,27 +57,37 @@ func run(args []string) error {
 		return errors.New("this prototype requires macOS Seatbelt")
 	}
 	if len(args) == 0 || args[0] != "run" {
-		return errors.New("usage: 1024 run --agent claude|codex|dsh --folder PATH -- COMMAND [ARGS...]")
+		return errors.New("usage: 1024 run --agent claude|codex|dsh --folder PATH [--folder PATH ...] -- COMMAND [ARGS...]")
 	}
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	agent := flags.String("agent", "", "agent identity")
-	folder := flags.String("folder", "", "authorized project folder")
+	var requested foldersFlag
+	flags.Var(&requested, "folder", "authorized project folder (repeatable)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
 	if *agent != "claude" && *agent != "codex" && *agent != "dsh" {
 		return errors.New("agent must be claude, codex, or dsh")
 	}
-	if *folder == "" || flags.NArg() == 0 {
+	if len(requested) == 0 || flags.NArg() == 0 {
 		return errors.New("folder and command are required")
 	}
-	project, err := canonicalDir(*folder)
-	if err != nil {
-		return fmt.Errorf("folder: %w", err)
+	folders := make([]string, 0, len(requested))
+	seen := make(map[string]bool)
+	for _, requestedFolder := range requested {
+		project, err := canonicalDir(requestedFolder)
+		if err != nil {
+			return fmt.Errorf("folder %q: %w", requestedFolder, err)
+		}
+		if err := validateProject(project); err != nil {
+			return err
+		}
+		if !seen[project] {
+			folders = append(folders, project)
+			seen[project] = true
+		}
 	}
-	if err := validateProject(project); err != nil {
-		return err
-	}
+	project := folders[0]
 	binary, err := exec.LookPath(flags.Arg(0))
 	if err != nil {
 		return err
@@ -118,13 +129,13 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	broker, brokerPath, err := startBroker(home, *agent, project, newGitHubService(store))
+	broker, brokerPath, err := startBroker(home, *agent, folders, newGitHubService(store))
 	if err != nil {
 		return fmt.Errorf("broker: %w", err)
 	}
 	defer broker.Close()
-	profile := seatbeltProfile(project, home, binary, self, brokerPath)
-	if err := verify(profile, project, home, outsidePath, self, brokerPath, *agent); err != nil {
+	profile := seatbeltProfile(folders, home, binary, self, brokerPath)
+	if err := verify(profile, folders, home, outsidePath, self, brokerPath, *agent); err != nil {
 		return fmt.Errorf("sandbox verification failed (command not started): %w", err)
 	}
 	command := exec.Command("/usr/bin/sandbox-exec", append([]string{"-p", profile, binary}, flags.Args()[1:]...)...)
@@ -134,6 +145,20 @@ func run(args []string) error {
 	if err := command.Run(); err != nil {
 		return err
 	}
+	return nil
+}
+
+type foldersFlag []string
+
+func (f *foldersFlag) String() string {
+	return strings.Join(*f, ", ")
+}
+
+func (f *foldersFlag) Set(value string) error {
+	if value == "" {
+		return errors.New("folder cannot be empty")
+	}
+	*f = append(*f, value)
 	return nil
 }
 
@@ -156,23 +181,29 @@ func canonicalDir(path string) (string, error) {
 	return path, nil
 }
 
-func seatbeltProfile(project, home, binary, self, socket string) string {
+func seatbeltProfile(folders []string, home, binary, self, socket string) string {
 	quote := strconv.Quote
-	return strings.Join([]string{
+	rules := []string{
 		"(version 1)",
 		"(deny default)",
 		"(allow process-exec)",
 		"(allow process-fork)",
 		"(allow file-read* (literal \"/\") (subpath \"/System\") (subpath \"/usr/lib\") (subpath \"/usr/share\") (subpath \"/bin\") (subpath \"/usr/bin\"))",
 		"(allow file-read* (literal \"/dev/null\") (literal \"/dev/urandom\") (literal \"/dev/random\") (literal \"/dev/tty\"))",
-		"(allow file-read* (subpath " + quote(project) + ") (subpath " + quote(home) + "))",
+		"(allow file-read* (subpath " + quote(home) + "))",
 		"(allow file-read* (literal " + quote(binary) + ") (literal " + quote(self) + "))",
-		"(allow file-write* (subpath " + quote(project) + ") (subpath " + quote(home) + "))",
+		"(allow file-write* (subpath " + quote(home) + "))",
 		"(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\"))",
 		"(allow sysctl-read)",
 		"(allow system-socket (socket-domain AF_UNIX))",
 		"(allow network-outbound (remote unix-socket (literal " + quote(socket) + ")))",
-	}, "\n")
+	}
+	for _, folder := range folders {
+		rules = append(rules,
+			"(allow file-read* (subpath "+quote(folder)+"))",
+			"(allow file-write* (subpath "+quote(folder)+"))")
+	}
+	return strings.Join(rules, "\n")
 }
 
 func sandboxEnv(home, socket string) []string {
@@ -185,7 +216,7 @@ func sandboxEnv(home, socket string) []string {
 	}
 }
 
-func verify(profile, project, home, outside, self, socket, agent string) error {
+func verify(profile string, folders []string, home, outside, self, socket, agent string) error {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -196,8 +227,9 @@ func verify(profile, project, home, outside, self, socket, agent string) error {
 		return err
 	}
 	defer other.Close()
-	command := exec.Command("/usr/bin/sandbox-exec", "-p", profile, self, "__probe",
-		project, home, outside, listener.Addr().String(), socket, other.Addr().String(), agent)
+	probeArgs := append([]string{"-p", profile, self, "__probe"}, folders...)
+	probeArgs = append(probeArgs, home, outside, listener.Addr().String(), socket, other.Addr().String(), agent)
+	command := exec.Command("/usr/bin/sandbox-exec", probeArgs...)
 	command.Env = sandboxEnv(home, socket)
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -207,29 +239,35 @@ func verify(profile, project, home, outside, self, socket, agent string) error {
 }
 
 func probe(args []string) int {
-	if len(args) != 7 {
+	if len(args) < 7 {
 		return 2
 	}
-	if _, err := os.ReadDir(args[0]); err != nil {
-		return probeFailure("allowed folder is not readable", err)
+	folders := args[:len(args)-6]
+	home, outside, tcp, socket, otherSocket, agent := args[len(args)-6], args[len(args)-5],
+		args[len(args)-4], args[len(args)-3], args[len(args)-2], args[len(args)-1]
+	for _, folder := range folders {
+		if _, err := os.ReadDir(folder); err != nil {
+			return probeFailure("allowed folder is not readable", err)
+		}
 	}
-	if err := os.WriteFile(filepath.Join(args[1], "probe"), []byte("ok"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(home, "probe"), []byte("ok"), 0600); err != nil {
 		return probeFailure("private home is not writable", err)
 	}
-	if _, err := os.ReadFile(args[2]); err == nil || !errors.Is(err, os.ErrPermission) {
+	if _, err := os.ReadFile(outside); err == nil || !errors.Is(err, os.ErrPermission) {
 		return probeFailure("outside file was not denied", err)
 	}
-	if err := os.WriteFile(args[2], []byte("bad"), 0600); err == nil || !errors.Is(err, os.ErrPermission) {
+	if err := os.WriteFile(outside, []byte("bad"), 0600); err == nil || !errors.Is(err, os.ErrPermission) {
 		return probeFailure("outside write was not denied", err)
 	}
-	status, err := readStatus(args[4])
-	if err != nil || status.Agent != args[6] || status.Folder != args[0] {
+	status, err := readStatus(socket)
+	if err != nil || status.Agent != agent || status.Folder != folders[0] ||
+		!slices.Equal(status.Folders, folders) {
 		return probeFailure("host status channel is unavailable or incorrect", err)
 	}
-	if err := deniedDial("unix", args[5]); err != nil {
+	if err := deniedDial("unix", otherSocket); err != nil {
 		return probeFailure("outside unix socket was not denied", err)
 	}
-	if err := deniedDial("tcp", args[3]); err != nil {
+	if err := deniedDial("tcp", tcp); err != nil {
 		return probeFailure("network denial was not confirmed", err)
 	}
 	return 0

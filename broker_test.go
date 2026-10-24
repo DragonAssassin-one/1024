@@ -14,7 +14,7 @@ import (
 func TestBrokerStatusOnly(t *testing.T) {
 	home := t.TempDir()
 	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
-	broker, path, err := startBroker(home, "dsh", "/project", githubService{store: store})
+	broker, path, err := startBroker(home, "dsh", []string{"/project"}, githubService{store: store})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestBrokerRevocation(t *testing.T) {
 		},
 		client: server.Client(), endpoint: server.URL,
 	}
-	broker, path, err := startBroker(t.TempDir(), "codex", "/project", service)
+	broker, path, err := startBroker(t.TempDir(), "codex", []string{"/project"}, service)
 	if err != nil {
 		t.Fatal(err)
 	}
