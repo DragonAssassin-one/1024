@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -89,5 +90,14 @@ func TestBrokerRevocation(t *testing.T) {
 	status, err = readStatus(path)
 	if err != nil || len(status.Connections) != 0 {
 		t.Fatalf("disabled status: %+v, %v", status, err)
+	}
+	if err := os.WriteFile(store.path, []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readStatus(path); err == nil {
+		t.Fatal("corrupt authorization state should fail status request")
+	}
+	if _, err := readIdentity(path); err == nil || reads != 1 {
+		t.Fatalf("corrupt authorization state accessed credential: %v", err)
 	}
 }

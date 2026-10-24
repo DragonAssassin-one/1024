@@ -73,3 +73,28 @@ func TestGitHubIdentityRejectsErrorBody(t *testing.T) {
 		t.Fatalf("response body leaked: %v", err)
 	}
 }
+
+func TestGitHubIdentityRejectsRedirect(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	if err := store.set("codex", true); err != nil {
+		t.Fatal(err)
+	}
+	redirected := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirected" {
+			redirected = true
+			t.Error("redirect target received credential")
+			return
+		}
+		http.Redirect(w, r, "/redirected", http.StatusFound)
+	}))
+	defer server.Close()
+	service := newGitHubService(store)
+	service.endpoint = server.URL
+	service.client.Transport = server.Client().Transport
+	service.credential = func() ([]byte, error) { return []byte("test-secret"), nil }
+	_, err := service.identity(context.Background(), "codex")
+	if err == nil || redirected || strings.Contains(err.Error(), "test-secret") {
+		t.Fatalf("redirect was not safely rejected: %v", err)
+	}
+}
