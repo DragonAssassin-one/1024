@@ -4,6 +4,8 @@
 
 KeyMoat 是一个 macOS 本地沙箱原型：把编码 Agent 放进受限文件、网络和进程环境里，把凭证和外部服务连接留在沙箱外的宿主进程中。
 
+**作者与项目负责人：王鹏斐。** 需求分析、产品设计、全部源码、架构设计、模块实现、测试、文档、打包和发布均由王鹏斐完成。
+
 > Codex 和 Claude Code 已有独立的 CLI 模型代理路径。控制台仍只支持 Codex；dsh 目前只作为运行身份标签。
 
 ## 功能
@@ -184,6 +186,7 @@ Codex 会在受保护的临时 `CODEX_HOME` 中启动，通过本机宿主代理
 - [架构与代码布局](docs/architecture.md)
 - [安全边界](docs/security.md)
 - [测试与覆盖率](docs/testing.md)
+- [项目提交信息](docs/project-submission.md)
 - [发布流程](docs/releasing.md)
 - [版本记录](CHANGELOG.md)
 - [v0.0.5 Release](https://github.com/DragonAssassin-one/1024/releases/tag/v0.0.5)

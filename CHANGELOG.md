@@ -2,6 +2,7 @@
 
 ## v0.0.5 - 2026-10-25
 
+- Complete the project submission metadata: author, owner, source scope, run instructions, architecture/module specifications, and single-person responsibility are documented in `docs/project-submission.md`. All work is credited to 王鹏斐.
 - Add a non-interactive Claude Code CLI path with a host-only Anthropic Messages proxy. The sandbox receives a per-run local capability, while the upstream API Key stays in the host Keychain. Anthropic authorization is separate for the `claude` agent.
 - Scope Claude's extra Seatbelt read grant to its private per-user runtime directory. Keep the startup denial probe mandatory; configure the KeyMoat MCP explicitly and clean up temporary sessions on exit or cancellation.
 - Stream OpenAI and Anthropic SSE responses through a bounded cross-chunk credential guard instead of buffering the full stream. JSON responses remain buffered and checked before forwarding.
