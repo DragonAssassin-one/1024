@@ -12,6 +12,10 @@ func control(args []string) error {
 		return controlConnectionWithDeps(args, openAIConnection, defaultConnectionStore,
 			openAICredentialExists, saveOpenAICredential, os.Stdout)
 	}
+	if len(args) > 1 && args[1] == anthropicConnection {
+		return controlConnectionWithDeps(args, anthropicConnection, defaultConnectionStore,
+			anthropicCredentialExists, saveAnthropicCredential, os.Stdout)
+	}
 	return controlWithDeps(args, defaultConnectionStore, githubCredentialExists, saveGitHubCredential, os.Stdout)
 }
 
@@ -81,6 +85,8 @@ func controlConnectionWithDeps(args []string, service string, storeForUser func(
 	label := "GitHub"
 	if service == openAIConnection {
 		label = "OpenAI"
+	} else if service == anthropicConnection {
+		label = "Anthropic"
 	}
 	fmt.Fprintf(output, "%s: %s %s\n", args[3], label, state)
 	return nil

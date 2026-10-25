@@ -33,6 +33,6 @@ if "$root/1024" run --agent codex --folder "$project" --read-only "$reference" -
 fi
 test ! -e "$reference/denied"
 
-printf '3/3 Simulated Codex completion, scoped GitHub read, and live revocation\n'
-go test -count=1 -run 'Test(CodexCompletesWithSimulatedModel|GitHubReadFileScopeAndResponse|MCPToolAuthorizationChangesDuringSession|ModelProxyAuthorizationAndRevocation)$' .
+printf '3/3 Simulated model completion, scoped GitHub read, and live revocation\n'
+go test -count=1 -run 'Test(CodexCompletesWithSimulatedModel|ClaudeRoutesThroughHostProxy|GitHubReadFileScopeAndResponse|MCPToolAuthorizationChangesDuringSession|ModelProxyAuthorizationAndRevocation)$' .
 printf 'PASS: no real credential or external API was used\n'

@@ -15,6 +15,7 @@ import (
 
 const githubConnection = "github"
 const openAIConnection = "openai"
+const anthropicConnection = "anthropic"
 
 var repositoryNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}/[a-zA-Z0-9._-]{1,100}$`)
 
@@ -119,6 +120,9 @@ func (s connectionStore) status(agent string) ([]string, []string, error) {
 	if state[agent][openAIConnection] {
 		connections = append(connections, openAIConnection)
 	}
+	if state[agent][anthropicConnection] {
+		connections = append(connections, anthropicConnection)
+	}
 	if state[agent][githubConnection] {
 		connections = append(connections, githubConnection)
 		for key, allowed := range state[agent] {
@@ -155,7 +159,7 @@ func (s connectionStore) set(agent string, enabled bool) error {
 }
 
 func (s connectionStore) setService(agent, service string, enabled bool) error {
-	if service != githubConnection && service != openAIConnection {
+	if service != githubConnection && service != openAIConnection && service != anthropicConnection {
 		return errors.New("unsupported connection")
 	}
 	return s.setKey(agent, service, enabled)
