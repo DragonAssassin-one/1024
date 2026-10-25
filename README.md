@@ -8,6 +8,8 @@ KeyMoat 是一个 macOS 本地沙箱原型：把编码 Agent 放进受限文件�
 
 **测试覆盖率：90.5%。** 项目要求合并进程语句覆盖率不低于 90%，并通过 race、`go vet` 和无凭证 Demo 验证。
 
+**Demo 视频：** [1024-KeyMoat-demo（哔哩哔哩）](https://www.bilibili.com/video/BV1gxnU6GE4e?vd_source=6beeb573843e8678a582b983642240b5)
+
 > Codex 和 Claude Code 已有独立的 CLI 模型代理路径。控制台仍只支持 Codex；dsh 目前只作为运行身份标签。
 
 ## 功能
