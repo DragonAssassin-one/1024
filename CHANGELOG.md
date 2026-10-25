@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.6 - 2026-10-25
+
+- Update the submission version and release metadata to `v0.0.6`.
+- Include the complete project submission metadata: author, source scope, run commands, architecture/module specifications, and single-person responsibility for all work by 王鹏斐.
+- Add the submission metadata document to the documented release package contents.
+
+### Validation
+
+- Existing v0.0.5 Claude Code, sandbox, proxy, and authorization behavior is retained.
+- Documentation-only release follow-up; the repository's macOS CI, race tests, vet, and coverage gate remain required.
+
 ## v0.0.5 - 2026-10-25
 
 - Complete the project submission metadata: author, owner, source scope, run instructions, architecture/module specifications, and single-person responsibility are documented in `docs/project-submission.md`. All work is credited to 王鹏斐.

@@ -34,7 +34,7 @@ KeyMoat 是一个 macOS 本地沙箱原型：把编码 Agent 放进受限文件�
 go build -o 1024 .
 ```
 
-### 下载 v0.0.5
+### 下载 v0.0.6
 
 GitHub Release 提供 macOS `arm64` 和 `amd64` 实验性压缩包。下载后先验证校验和，再解压：
 
@@ -45,8 +45,8 @@ case "$(uname -m)" in
   x86_64) arch=amd64 ;;
   *) echo "不支持的架构" >&2; exit 1 ;;
 esac
-archive="keymoat_v0.0.5_darwin_${arch}.tar.gz"
-base="https://github.com/DragonAssassin-one/1024/releases/download/v0.0.5"
+archive="keymoat_v0.0.6_darwin_${arch}.tar.gz"
+base="https://github.com/DragonAssassin-one/1024/releases/download/v0.0.6"
 curl -fLO "$base/$archive"
 curl -fLO "$base/SHA256SUMS"
 grep "  $archive$" SHA256SUMS | shasum -a 256 -c -
@@ -189,7 +189,7 @@ Codex 会在受保护的临时 `CODEX_HOME` 中启动，通过本机宿主代理
 - [项目提交信息](docs/project-submission.md)
 - [发布流程](docs/releasing.md)
 - [版本记录](CHANGELOG.md)
-- [v0.0.5 Release](https://github.com/DragonAssassin-one/1024/releases/tag/v0.0.5)
+- [v0.0.6 Release](https://github.com/DragonAssassin-one/1024/releases/tag/v0.0.6)
 
 ## 开发验证
 
