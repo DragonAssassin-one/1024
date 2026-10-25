@@ -1,80 +1,93 @@
-# Changelog
+# 版本记录
+
+## v0.0.7 - 2026-10-25
+
+- 发布版本更新为 `v0.0.7`。
+- 上传 KeyMoat Demo 录制视频 `demo.mov`，用于展示项目运行流程和安全边界。
+- README 的测试覆盖率说明前置，明确合并进程语句覆盖率门槛为 90%，当前覆盖率为 90.5%。
+- 保留完整的王鹏斐署名、源码范围、运行说明、架构设计、模块规格和分工信息。
+
+### 验证
+
+- macOS race 测试、`go vet`、覆盖率检查和无凭证 Demo 通过。
+- Release 提供 macOS `arm64` 和 `amd64` 构建包，以及 `SHA256SUMS`。
+- 发布二进制为实验性构建，未签名、未公证。
 
 ## v0.0.6 - 2026-10-25
 
-- Update the submission version and release metadata to `v0.0.6`.
-- Include the complete project submission metadata: author, source scope, run commands, architecture/module specifications, and single-person responsibility for all work by 王鹏斐.
-- Add the submission metadata document to the documented release package contents.
+- 将提交版本和发布元数据统一为 `v0.0.6`。
+- 补充完整项目提交信息：作者、源码范围、运行命令、架构/模块规格，以及全部工作由王鹏斐完成的分工说明。
+- 将项目提交信息文档加入发布包内容。
 
-### Validation
+### 验证
 
-- Existing v0.0.5 Claude Code, sandbox, proxy, and authorization behavior is retained.
-- Documentation-only release follow-up; the repository's macOS CI, race tests, vet, and coverage gate remain required.
+- 保留 v0.0.5 的 Claude Code、沙箱、代理和授权功能。
+- 文档更新版本；继续要求 macOS CI、race、vet 和覆盖率门槛检查。
 
 ## v0.0.5 - 2026-10-25
 
-- Complete the project submission metadata: author, owner, source scope, run instructions, architecture/module specifications, and single-person responsibility are documented in `docs/project-submission.md`. All work is credited to 王鹏斐.
-- Add a non-interactive Claude Code CLI path with a host-only Anthropic Messages proxy. The sandbox receives a per-run local capability, while the upstream API Key stays in the host Keychain. Anthropic authorization is separate for the `claude` agent.
-- Scope Claude's extra Seatbelt read grant to its private per-user runtime directory. Keep the startup denial probe mandatory; configure the KeyMoat MCP explicitly and clean up temporary sessions on exit or cancellation.
-- Stream OpenAI and Anthropic SSE responses through a bounded cross-chunk credential guard instead of buffering the full stream. JSON responses remain buffered and checked before forwarding.
-- Reorganize the README around setup and use, and document the implementation, test scope, and security limits separately.
+- 完善项目提交信息：作者、负责人、源码范围、运行说明、架构/模块规格和单人分工均记录在 `docs/project-submission.md`，全部工作由王鹏斐完成。
+- 新增非交互式 Claude Code CLI 路径和宿主侧 Anthropic Messages 代理。沙箱只获得本次运行的本地能力，上游 API Key 保留在宿主 Keychain 中。
+- 将 Claude 的额外 Seatbelt 读取权限限制在用户私有运行目录，保留启动拒绝探针，并通过显式配置接入 KeyMoat MCP。
+- OpenAI 和 Anthropic 的 SSE 响应使用跨分块凭证检查后转发；JSON 响应在检查后发送。
+- 重构 README，并分别补充实现、测试范围和安全限制文档。
 
-### Validation
+### 验证
 
-- macOS race tests, `go vet`, and the credential-free demo pass. A locally installed Claude Code CLI consumes a simulated Messages completion through the sandbox and host proxy; no real API credential is read.
-- Combined process statement coverage: 90.5% locally; the no-Claude-CLI check also meets the 90% CI threshold.
-- Release binaries are experimental and not code-signed or notarized. Real upstream requests and cross-version Claude Code compatibility are not verified by automation.
+- macOS race、`go vet` 和无凭证 Demo 通过。
+- 本机安装 Claude Code 时，可通过沙箱和宿主代理完成模拟 Messages 请求；不读取真实 API 凭证。
+- 合并进程语句覆盖率为 90.5%，未安装 Claude CLI 时也达到 90% CI 门槛。
 
 ## v0.0.4 - 2026-10-25
 
-- Deliver the Codex single-path end-to-end workflow: real Codex CLI starts inside KeyMoat, uses an ephemeral local configuration, reaches only the host model proxy, and consumes a simulated Responses completion in CI.
-- Deliver the loopback authorization console: native folder selection, OpenAI/GitHub switches, repository grants, Codex task launch/cancel, bounded output, CSRF and same-origin checks, and shutdown cleanup.
-- Deliver the reproducible adversarial demo: writable project access succeeds, read-only and outside access fail, scoped GitHub access is revoked live, and the model proxy never exposes the upstream credential.
-- Keep the implementation experimental: real OpenAI/GitHub credentials are never used by automated tests; online Codex execution requires the host Keychain setup documented in `README.md`.
+- 完成 Codex 单路径端到端流程：在 KeyMoat 中启动真实 Codex CLI，通过临时配置访问宿主模型代理，并在 CI 中消费模拟 Responses 完成事件。
+- 完成本机 loopback 授权控制台：目录选择、OpenAI/GitHub 开关、仓库授权、Codex 任务启动/取消、输出限制、CSRF 和同源校验。
+- 完成可复现安全演示：授权写入成功、只读和越权访问失败、GitHub 白名单实时撤销、模型代理不泄露上游凭证。
+- 保持实验性实现：自动化测试不使用真实 OpenAI/GitHub 凭证，在线 Codex 运行需要按 README 配置 Keychain。
 
-### Validation
+### 验证
 
-- macOS race tests and `go vet` pass.
-- Combined process statement coverage: 91.3% locally; CI enforces at least 90%.
-- Release binaries are experimental and not code-signed or notarized.
+- macOS race 测试和 `go vet` 通过。
+- 本机合并进程语句覆盖率为 91.3%，CI 门槛为 90%。
+- 发布二进制未签名、未公证。
 
 ## v0.0.3 - 2026-10-25
 
-- Normalize the Go runtime layout: CLI dispatch, sandbox runtime, authorization, credential storage, Codex, GitHub, broker, and MCP responsibilities now have explicit file boundaries.
-- Document the code layout and dependency direction in `docs/architecture.md`.
-- Preserve the Codex MVP, loopback authorization console, scoped GitHub MCP, and no-secret adversarial demo behavior from v0.0.2.
+- 规范 Go 运行时布局，明确 CLI、沙箱、授权、凭证、Codex、GitHub、broker 和 MCP 的文件职责。
+- 在 `docs/architecture.md` 中记录代码布局和依赖方向。
+- 保留 v0.0.2 的 Codex MVP、本机授权控制台、GitHub MCP 和无密钥安全演示。
 
-### Validation
+### 验证
 
-- macOS race tests and `go vet` pass.
-- Combined process statement coverage: 91.3% locally; CI enforces at least 90%.
-- Release binaries are experimental and not code-signed or notarized.
+- macOS race 测试和 `go vet` 通过。
+- 本机合并进程语句覆盖率为 91.3%，CI 门槛为 90%。
+- 发布二进制未签名、未公证。
 
 ## v0.0.2 - 2026-10-25
 
-- Adopt **KeyMoat** as the project display name and replace the numeric logo with a key-and-boundary mark. The `1024` CLI, module path, repository URL, and v0.0.1 artifacts remain unchanged for compatibility.
-- Add a single-path Codex runner with host-only OpenAI Responses proxy and an ephemeral local session capability. GitHub MCP can read scoped UTF-8 files from explicitly authorized repositories.
-- Add a credential-free demo and simulated model integration tests. Real upstream access still requires user-provided credentials and is not covered by CI.
-- Add a host-only KeyMoat control console for folder selection, connection/repository authorization, and Codex task launch/cancellation.
+- 使用 **KeyMoat** 作为项目显示名称，并将数字图标替换为钥匙和边界标记；`1024` CLI、模块路径、仓库地址和 v0.0.1 产物保持兼容。
+- 新增宿主侧 OpenAI Responses 代理和一次性本地会话能力的 Codex 运行器。
+- 新增无凭证演示和模拟模型集成测试；真实外部服务访问仍需要用户自行提供凭证。
+- 新增本机 KeyMoat 授权控制台，支持目录选择、OpenAI/GitHub 开关、仓库授权以及 Codex 任务管理。
 
-### Validation
+### 验证
 
-- macOS race tests and `go vet` pass.
-- Combined process statement coverage: 90.6% locally; CI enforces at least 90%.
-- Release binaries are experimental and not code-signed or notarized.
+- macOS race 测试和 `go vet` 通过。
+- 本机合并进程语句覆盖率为 90.6%，CI 门槛为 90%。
+- 发布二进制未签名、未公证。
 
 ## v0.0.1 - 2026-10-24
 
-First experimental macOS release of 1024.
+1024 的首个实验性 macOS 版本。
 
-### Included
+### 包含内容
 
-- Per-run Seatbelt isolation with default-denied file and network access, writable and read-only folder grants, and launch-time denial probes.
-- A per-run Unix socket broker and keyless MCP stdio tools for sandbox status and a narrowly scoped GitHub identity lookup.
-- Host-side GitHub credential storage in macOS Keychain with independent Claude Code, Codex, and dsh authorization switches.
-- macOS CI with race detection, `go vet`, and a **90% minimum combined statement coverage** gate. The local release baseline is **90.7%**.
-- Project mark, architecture, security-boundary, and testing documentation.
+- 每次运行独立的 Seatbelt 隔离、默认拒绝的文件/网络访问、可写和只读目录授权，以及启动拒绝探针。
+- 每次运行独立的 Unix socket broker，以及用于沙箱状态和 GitHub 身份查询的无密钥 MCP 工具。
+- 宿主侧 macOS Keychain 凭证存储，并按 Claude Code、Codex 和 dsh 分开管理授权开关。
+- macOS CI、race 检测、`go vet` 和合并语句覆盖率至少 90% 的门槛。
+- 项目图标、架构、安全边界和测试文档。
 
-### Limitations
+### 限制
 
-This is a prototype, not a production security boundary. Agent names are labels; online Claude Code, Codex, and dsh sessions, a desktop authorization UI, general MCP credential proxying, and GitHub repository operations are not implemented. Tests use a simulated GitHub API and do not store or read a real token. See [security boundaries](docs/security.md) and [testing](docs/testing.md).
+这是实验原型，不是经过安全审计的生产级边界。真实 Claude Code、Codex、dsh 在线会话、桌面授权 UI、通用 MCP 凭证代理和 GitHub 仓库操作当时尚未实现。测试使用模拟 GitHub API，不保存或读取真实令牌。详见[安全边界](docs/security.md)和[测试说明](docs/testing.md)。

@@ -6,6 +6,8 @@ KeyMoat 是一个 macOS 本地沙箱原型：把编码 Agent 放进受限文件�
 
 **作者与项目负责人：王鹏斐。** 需求分析、产品设计、全部源码、架构设计、模块实现、测试、文档、打包和发布均由王鹏斐完成。
 
+**测试覆盖率：90.5%。** 项目要求合并进程语句覆盖率不低于 90%，并通过 race、`go vet` 和无凭证 Demo 验证。
+
 > Codex 和 Claude Code 已有独立的 CLI 模型代理路径。控制台仍只支持 Codex；dsh 目前只作为运行身份标签。
 
 ## 功能
@@ -34,7 +36,7 @@ KeyMoat 是一个 macOS 本地沙箱原型：把编码 Agent 放进受限文件�
 go build -o 1024 .
 ```
 
-### 下载 v0.0.6
+### 下载 v0.0.7
 
 GitHub Release 提供 macOS `arm64` 和 `amd64` 实验性压缩包。下载后先验证校验和，再解压：
 
@@ -45,8 +47,8 @@ case "$(uname -m)" in
   x86_64) arch=amd64 ;;
   *) echo "不支持的架构" >&2; exit 1 ;;
 esac
-archive="keymoat_v0.0.6_darwin_${arch}.tar.gz"
-base="https://github.com/DragonAssassin-one/1024/releases/download/v0.0.6"
+archive="keymoat_v0.0.7_darwin_${arch}.tar.gz"
+base="https://github.com/DragonAssassin-one/1024/releases/download/v0.0.7"
 curl -fLO "$base/$archive"
 curl -fLO "$base/SHA256SUMS"
 grep "  $archive$" SHA256SUMS | shasum -a 256 -c -
@@ -189,7 +191,8 @@ Codex 会在受保护的临时 `CODEX_HOME` 中启动，通过本机宿主代理
 - [项目提交信息](docs/project-submission.md)
 - [发布流程](docs/releasing.md)
 - [版本记录](CHANGELOG.md)
-- [v0.0.6 Release](https://github.com/DragonAssassin-one/1024/releases/tag/v0.0.6)
+- [Demo 视频与发布资产](https://github.com/DragonAssassin-one/1024/releases/tag/v0.0.7)
+- [v0.0.7 Release](https://github.com/DragonAssassin-one/1024/releases/tag/v0.0.7)
 
 ## 开发验证
 
