@@ -21,6 +21,8 @@ func main() {
 		err = runMCP(context.Background())
 	case len(os.Args) > 1 && os.Args[1] == "codex":
 		err = runCodex(os.Args[2:])
+	case len(os.Args) > 1 && os.Args[1] == "claude":
+		err = runClaude(os.Args[2:])
 	case len(os.Args) > 1 && os.Args[1] == "dashboard":
 		err = runDashboard()
 	case len(os.Args) > 1 && isAuthorizationCommand(os.Args[1]):

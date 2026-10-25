@@ -10,7 +10,7 @@ go vet ./...
 
 重构后的回归检查重点是：CLI 入口只分发命令；沙箱运行器统一负责 Seatbelt、临时 HOME 和进程组清理；授权状态和凭证适配器不进入沙箱；控制台只通过宿主授权接口启动 Codex。新增代码必须优先补注入式测试，真实 macOS/CLI smoke 只验证边界，不写用户钥匙串。
 
-GitHub Actions 在 `macos-latest` 上执行相同检查，并强制要求**合并语句覆盖率至少 90%**。2026-10-25 本机非缓存测试结果为 **91.3%**。脚本先以 `go test -c -cover` 运行测试，再以 `go build -cover` 运行宿主进程、真实 Seatbelt 探针、状态子命令、MCP 协议调用和本机控制台入口；使用 Go 原生 `covdata merge` 合并计数。`GOCOVERDIR` 仅在位于已授权可写目录时才传入沙箱，其他宿主环境变量仍不继承。
+GitHub Actions 在 `macos-latest` 上执行相同检查，并强制要求**合并语句覆盖率至少 90%**。2026-10-25 本机非缓存测试结果为 **90.5%**，跳过真实 Claude CLI smoke 时也达到了 90% 门槛。脚本先以 `go test -c -cover` 运行测试，再以 `go build -cover` 运行宿主进程、真实 Seatbelt 探针、状态子命令、MCP 协议调用和本机控制台入口；使用 Go 原生 `covdata merge` 合并计数。`GOCOVERDIR` 仅在位于已授权可写目录时才传入沙箱，其他宿主环境变量仍不继承。
 
 普通 `go test -cover ./...` 只计测试进程，不计独立二进制及其探针；它与上述合并覆盖率**口径不同**。覆盖率是语句执行比例，不是安全能力的百分比，也不代表安全审计。需要排查未命中代码时，可指定 `COVERAGE_PROFILE=/absolute/path/coverage.out bash scripts/coverage.sh` 生成合并后的文本 profile。
 
@@ -22,7 +22,8 @@ GitHub Actions 在 `macos-latest` 上执行相同检查，并强制要求**合�
 | Broker 与 MCP | 固定请求集合、状态清单、MCP 初始化/工具调用、损坏响应拒绝、连接关闭后同一会话重新检查 |
 | GitHub | 模拟 HTTP 服务验证固定身份字段、按 Agent/仓库授权、文本大小与路径限制、错误正文不回显、重定向拒绝 |
 | Codex 模型路径 | 真实 CLI 在外层沙箱启动并通过宿主代理消费模拟 Responses 成功事件；模型代理校验 session、固定端点、Key 注入、流上限和撤销 |
+| Claude 模型路径 | 安装原生 CLI 时，在外层沙箱通过宿主代理消费模拟 Messages 流；验证私有运行目录、临时 HOME、代理能力、授权撤销和 Key 不回显 |
 | 本机控制台 | 精确 Host/Origin/CSRF、钥匙串缺失时拒绝开关、仓库白名单、受保护目录拒绝、并发任务/取消/输出上限、真实回环监听及优雅退出 |
 | 授权状态 | 并发更新、默认关闭、损坏状态拒绝、无凭证或钥匙串查询失败时不打开连接；系统钥匙串命令仅用无效子命令测试进程接线 |
 
-**未自动验证：** 真正的 macOS 钥匙串交互和令牌权限、线上 GitHub/OpenAI 请求、真实模型完成复杂编码任务、Claude Code/dsh 在线会话、不同 macOS 版本及长期运行后的资源耗尽。测试不会写入真实钥匙串、读取已有令牌或调用真实外部 API。当前原型不应据此宣称通过安全审计。
+**未自动验证：** 真正的 macOS 钥匙串交互和令牌权限、线上 GitHub/OpenAI/Anthropic 请求、真实模型完成复杂编码任务、dsh 在线会话、不同 macOS 版本及长期运行后的资源耗尽。CI 未安装 Claude Code 时跳过其真实 CLI smoke，但保留不依赖安装的沙箱启动测试。测试不会写入真实钥匙串、读取已有令牌或调用真实外部 API。当前原型不应据此宣称通过安全审计。

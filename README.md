@@ -4,13 +4,14 @@
 
 KeyMoat 是一个 macOS 本地沙箱原型：把编码 Agent 放进受限文件、网络和进程环境里，把凭证和外部服务连接留在沙箱外的宿主进程中。
 
-> 当前版本优先支持 **Codex 单路径**。Claude Code 和 dsh 目前只作为运行身份标签，尚未接入在线模型。
+> Codex 和 Claude Code 已有独立的 CLI 模型代理路径。控制台仍只支持 Codex；dsh 目前只作为运行身份标签。
 
 ## 功能
 
 - **文件隔离**：可写目录、只读目录分开授权；未授权目录默认不可读写。
 - **网络隔离**：普通沙箱默认禁止 TCP 网络，只允许本次运行专属的本机 Unix socket。
 - **Codex 运行**：通过宿主侧模型代理启动已安装的 Codex CLI；上游 API Key 不进入沙箱。
+- **Claude Code 运行**：通过宿主侧 Messages 代理启动已安装的原生 Claude Code CLI；上游 API Key 不进入沙箱。
 - **GitHub 只读 MCP**：按 Agent 和 `owner/repository` 白名单读取最多 64 KiB 的 UTF-8 文本文件。
 - **本机授权控制台**：选择项目目录、开关连接、授权仓库、启动或取消 Codex 任务。
 - **可复现安全演示**：不需要真实 API Key，展示正常写入、越权拒绝、只读目录拒绝、连接撤销和模拟模型完成。
@@ -22,7 +23,8 @@ KeyMoat 是一个 macOS 本地沙箱原型：把编码 Agent 放进受限文件�
 - macOS
 - Go 1.25 或更新版本
 - 如果运行 Codex：已安装 Codex CLI，并准备一个可用的模型 ID
-- 如果访问真实 OpenAI/GitHub：在宿主侧 Keychain 中保存对应凭证
+- 如果运行 Claude：已安装原生 Claude Code CLI（本机模拟测试使用 2.1.196），并准备一个可用的模型 ID
+- 如果访问真实 OpenAI/Anthropic/GitHub：在宿主侧 Keychain 中保存对应凭证
 
 ### 构建
 
@@ -30,13 +32,35 @@ KeyMoat 是一个 macOS 本地沙箱原型：把编码 Agent 放进受限文件�
 go build -o 1024 .
 ```
 
+### 下载 v0.0.5
+
+GitHub Release 提供 macOS `arm64` 和 `amd64` 实验性压缩包。下载后先验证校验和，再解压：
+
+```sh
+set -e
+case "$(uname -m)" in
+  arm64) arch=arm64 ;;
+  x86_64) arch=amd64 ;;
+  *) echo "不支持的架构" >&2; exit 1 ;;
+esac
+archive="keymoat_v0.0.5_darwin_${arch}.tar.gz"
+base="https://github.com/DragonAssassin-one/1024/releases/download/v0.0.5"
+curl -fLO "$base/$archive"
+curl -fLO "$base/SHA256SUMS"
+grep "  $archive$" SHA256SUMS | shasum -a 256 -c -
+tar -xzf "$archive"
+file ./1024
+```
+
+压缩包包含 `1024`、README、版本记录及架构/安全/测试文档。二进制未签名、未公证；首次运行可能被 macOS 阻止。不要在不信任的项目目录中运行 Agent。
+
 ### 运行无凭证演示
 
 ```sh
 bash scripts/demo.sh
 ```
 
-演示使用临时目录和模拟上游，不读取或修改真实 Keychain，也不会调用真实 OpenAI 或 GitHub。
+演示使用临时目录和模拟上游，不读取或修改真实 Keychain，也不会调用真实 OpenAI、Anthropic 或 GitHub。
 
 ### 启动授权控制台
 
@@ -107,16 +131,36 @@ Codex 会在受保护的临时 `CODEX_HOME` 中启动，通过本机宿主代理
 ./1024 disconnect github --agent codex
 ```
 
+## Claude Code 使用
+
+```sh
+./1024 credential anthropic
+./1024 connect anthropic --agent claude
+./1024 claude --folder /absolute/path/to/project --model YOUR_AVAILABLE_MODEL -- "检查项目并完成一个小任务"
+```
+
+可重复传入 `--read-only PATH` 授予额外只读目录。Claude Code 使用临时 HOME、一次性本地代理能力和 KeyMoat MCP；宿主代理每次请求重新检查 Claude 的 Anthropic 开关，并从 Keychain 读取上游 Key。CLI 以非交互模式运行，输出 JSON 事件，不保留会话。GitHub 授权需要单独执行：
+
+```sh
+./1024 credential github
+./1024 connect github --agent claude
+./1024 grant github OWNER/REPO --agent claude
+```
+
+撤销模型连接：`./1024 disconnect anthropic --agent claude`。新请求会被拒绝；已经发出的请求不会被撤销。
+
 ## 基础 CLI
 
 | 命令 | 用途 |
 | --- | --- |
 | `1024 dashboard` | 启动本机授权控制台 |
 | `1024 codex ...` | 在 KeyMoat 沙箱中运行 Codex |
+| `1024 claude ...` | 在 KeyMoat 沙箱中运行 Claude Code |
 | `1024 run ...` | 启动任意受限命令，适合调试和其他 Agent 原型 |
 | `1024 status` | 在沙箱内查看当前 Agent、目录和连接清单 |
 | `1024 mcp` | 启动 KeyMoat 的 MCP stdio server |
 | `1024 credential openai` | 交互式保存 OpenAI 凭证 |
+| `1024 credential anthropic` | 交互式保存 Anthropic 凭证 |
 | `1024 credential github` | 交互式保存 GitHub 凭证 |
 | `1024 connect SERVICE --agent AGENT` | 打开 Agent 的连接 |
 | `1024 disconnect SERVICE --agent AGENT` | 关闭 Agent 的连接 |
@@ -126,10 +170,10 @@ Codex 会在受保护的临时 `CODEX_HOME` 中启动，通过本机宿主代理
 ## 当前限制
 
 - 只支持 macOS Seatbelt 原型，不是经过安全审计的生产级边界。
-- 只有 Codex 完成了在线模型代理的单路径接入。
-- Claude Code 和 dsh 尚未接入在线模型。
+- Codex 与 Claude Code 分别接入 Responses 和 Messages；dsh 尚未接入在线模型。
+- Claude Code 当前仅支持非交互 CLI 任务；控制台仍只支持 Codex。
 - GitHub 当前只有身份查询和白名单文本文件读取，没有仓库写入。
-- 模型代理会完整缓冲响应，单次响应上限为 16 MiB。
+- 模型代理边检查边转发 SSE；单次响应上限为 16 MiB，JSON 响应完整缓冲后检查。
 - 同一宿主用户权限下的其他进程不在本原型的隔离威胁模型内。
 - 部分 macOS 系统工具会因为用户数据库查询被沙箱拒绝。
 - 发布二进制为实验性构建，未签名、未公证。
@@ -140,8 +184,9 @@ Codex 会在受保护的临时 `CODEX_HOME` 中启动，通过本机宿主代理
 - [架构与代码布局](docs/architecture.md)
 - [安全边界](docs/security.md)
 - [测试与覆盖率](docs/testing.md)
+- [发布流程](docs/releasing.md)
 - [版本记录](CHANGELOG.md)
-- [v0.0.4 Release](https://github.com/DragonAssassin-one/1024/releases/tag/v0.0.4)
+- [v0.0.5 Release](https://github.com/DragonAssassin-one/1024/releases/tag/v0.0.5)
 
 ## 开发验证
 
@@ -151,4 +196,4 @@ go vet ./...
 bash scripts/coverage.sh
 ```
 
-当前合并进程语句覆盖率约为 91%，CI 门槛为 90%。真实 Key、真实 OpenAI 请求和真实 GitHub 请求不会出现在自动化测试中。
+CI 的合并进程语句覆盖率门槛为 90%。真实 Key、真实 OpenAI/Anthropic/GitHub 请求不会出现在自动化测试中。

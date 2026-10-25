@@ -56,14 +56,15 @@ func runSandbox(args []string) error {
 }
 
 type runOptions struct {
-	proxyPort      int
-	homeRoot       string
-	ctx            context.Context
-	extraRead      []string
-	store          *connectionStore
-	nonInteractive bool
-	output         io.Writer
-	prepare        func(home, socket, self string) ([]string, error)
+	proxyPort         int
+	homeRoot          string
+	ctx               context.Context
+	extraRead         []string
+	extraReadMetadata []string
+	store             *connectionStore
+	nonInteractive    bool
+	output            io.Writer
+	prepare           func(home, socket, self string) ([]string, error)
 }
 
 func runPrepared(agent string, folders, readOnly []string, executable string, args []string, options runOptions) error {
@@ -129,10 +130,17 @@ func runPrepared(agent string, folders, readOnly []string, executable string, ar
 	defer broker.Close()
 	profile := seatbeltProfile(folders, readOnly, home, binary, self, brokerPath)
 	for _, path := range options.extraRead {
-		profile += "\n(allow file-read* (literal " + strconv.Quote(path) + "))"
+		scope := "literal"
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			scope = "subpath"
+		}
+		profile += "\n(allow file-read* (" + scope + " " + strconv.Quote(path) + "))"
 		for parent := filepath.Dir(path); parent != "/" && parent != "."; parent = filepath.Dir(parent) {
 			profile += "\n(allow file-read-metadata (literal " + strconv.Quote(parent) + "))"
 		}
+	}
+	for _, path := range options.extraReadMetadata {
+		profile += "\n(allow file-read-metadata (literal " + strconv.Quote(path) + "))"
 	}
 	if options.proxyPort != 0 {
 		profile += fmt.Sprintf("\n(allow network-outbound (remote ip \"localhost:%d\"))", options.proxyPort)

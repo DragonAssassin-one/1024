@@ -72,6 +72,29 @@ func TestOpenAIKeychainCommandScope(t *testing.T) {
 	}
 }
 
+func TestAnthropicKeychainCommandScope(t *testing.T) {
+	client := keychainClient{execute: func(args []string, interactive bool) ([]byte, error) {
+		if !slices.Contains(args, anthropicKeychainService) ||
+			!slices.Contains(args, anthropicKeychainAccount) {
+			t.Fatalf("Anthropic command used wrong item: %v", args)
+		}
+		if args[len(args)-1] == "-w" && !interactive {
+			return []byte("test-anthropic-key\n"), nil
+		}
+		return nil, nil
+	}}
+	if err := client.saveFor(anthropicKeychainAccount, anthropicKeychainService); err != nil {
+		t.Fatal(err)
+	}
+	if exists, err := client.existsFor(anthropicKeychainAccount, anthropicKeychainService); err != nil || !exists {
+		t.Fatalf("credential not found: %v, %v", exists, err)
+	}
+	if key, err := client.loadFor(anthropicKeychainAccount, anthropicKeychainService); err != nil ||
+		string(key) != "test-anthropic-key" {
+		t.Fatalf("credential load failed: %v", err)
+	}
+}
+
 func TestKeychainFailures(t *testing.T) {
 	missing := exec.Command("/bin/sh", "-c", "exit 44").Run()
 	failed := errors.New("security unavailable")

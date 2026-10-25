@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.5 - 2026-10-25
+
+- Add a non-interactive Claude Code CLI path with a host-only Anthropic Messages proxy. The sandbox receives a per-run local capability, while the upstream API Key stays in the host Keychain. Anthropic authorization is separate for the `claude` agent.
+- Scope Claude's extra Seatbelt read grant to its private per-user runtime directory. Keep the startup denial probe mandatory; configure the KeyMoat MCP explicitly and clean up temporary sessions on exit or cancellation.
+- Stream OpenAI and Anthropic SSE responses through a bounded cross-chunk credential guard instead of buffering the full stream. JSON responses remain buffered and checked before forwarding.
+- Reorganize the README around setup and use, and document the implementation, test scope, and security limits separately.
+
+### Validation
+
+- macOS race tests, `go vet`, and the credential-free demo pass. A locally installed Claude Code CLI consumes a simulated Messages completion through the sandbox and host proxy; no real API credential is read.
+- Combined process statement coverage: 90.5% locally; the no-Claude-CLI check also meets the 90% CI threshold.
+- Release binaries are experimental and not code-signed or notarized. Real upstream requests and cross-version Claude Code compatibility are not verified by automation.
+
 ## v0.0.4 - 2026-10-25
 
 - Deliver the Codex single-path end-to-end workflow: real Codex CLI starts inside KeyMoat, uses an ephemeral local configuration, reaches only the host model proxy, and consumes a simulated Responses completion in CI.

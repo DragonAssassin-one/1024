@@ -28,6 +28,8 @@ expect_failure "$app"
 expect_failure "$app" status
 expect_failure "$app" mcp
 expect_failure "$app" connect github --agent invalid
+expect_failure "$app" credential anthropic unexpected-argument
+expect_failure "$app" claude
 expect_failure "$app" run --agent invalid --folder "$project" -- /usr/bin/true
 expect_failure "$app" run --agent codex --folder "$project/missing" -- /usr/bin/true
 expect_failure "$app" __probe

@@ -13,6 +13,32 @@ import (
 	"testing"
 )
 
+func TestAnthropicConnectionScopedToClaude(t *testing.T) {
+	store := connectionStore{path: filepath.Join(t.TempDir(), "connections.json")}
+	var output bytes.Buffer
+	run := func(args ...string) error {
+		return controlConnectionWithDeps(args, anthropicConnection,
+			func() (connectionStore, error) { return store, nil },
+			func() (bool, error) { return true, nil },
+			func() error { return nil }, &output)
+	}
+	if err := run("connect", "anthropic", "--agent", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	claude, _, err := store.status("claude")
+	if err != nil || !slices.Contains(claude, anthropicConnection) {
+		t.Fatalf("Claude connection not enabled: %v, %v", claude, err)
+	}
+	codex, _, err := store.status("codex")
+	if err != nil || slices.Contains(codex, anthropicConnection) {
+		t.Fatalf("Claude authorization leaked to Codex: %v, %v", codex, err)
+	}
+	if err := run("disconnect", "anthropic", "--agent", "claude"); err != nil ||
+		!strings.Contains(output.String(), "Anthropic disabled") {
+		t.Fatalf("Anthropic disconnect: %v, %s", err, output.String())
+	}
+}
+
 func TestConnectionStorePerAgent(t *testing.T) {
 	store := connectionStore{path: filepath.Join(t.TempDir(), "state", "connections.json")}
 	for _, agent := range []string{"claude", "codex", "dsh"} {

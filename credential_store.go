@@ -9,10 +9,12 @@ import (
 )
 
 const (
-	githubKeychainService = "1024.github"
-	githubKeychainAccount = "github"
-	openAIKeychainService = "1024.openai"
-	openAIKeychainAccount = "openai"
+	githubKeychainService    = "1024.github"
+	githubKeychainAccount    = "github"
+	openAIKeychainService    = "1024.openai"
+	openAIKeychainAccount    = "openai"
+	anthropicKeychainService = "1024.anthropic"
+	anthropicKeychainAccount = "anthropic"
 )
 
 func saveGitHubCredential() error {
@@ -37,6 +39,18 @@ func openAICredentialExists() (bool, error) {
 
 func loadOpenAICredential() ([]byte, error) {
 	return (keychainClient{execute: executeSecurity}).loadFor(openAIKeychainAccount, openAIKeychainService)
+}
+
+func saveAnthropicCredential() error {
+	return (keychainClient{execute: executeSecurity}).saveFor(anthropicKeychainAccount, anthropicKeychainService)
+}
+
+func anthropicCredentialExists() (bool, error) {
+	return (keychainClient{execute: executeSecurity}).existsFor(anthropicKeychainAccount, anthropicKeychainService)
+}
+
+func loadAnthropicCredential() ([]byte, error) {
+	return (keychainClient{execute: executeSecurity}).loadFor(anthropicKeychainAccount, anthropicKeychainService)
 }
 
 type keychainClient struct {
@@ -91,7 +105,7 @@ func (c keychainClient) loadFor(account, service string) ([]byte, error) {
 	}
 	token := bytes.TrimSuffix(output, []byte{'\n'})
 	if len(token) == 0 || len(token) > 4096 || bytes.ContainsAny(token, "\r\n") {
-		return nil, errors.New("invalid GitHub credential in keychain")
+		return nil, errors.New("invalid credential in keychain")
 	}
 	return token, nil
 }

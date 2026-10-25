@@ -11,14 +11,14 @@ KeyMoat 把一次 Agent 运行拆成两个信任域：
              │ 受限 Unix socket / 精确回环端口
              ▼
 沙箱侧
-  Codex / MCP / shell + 明确授权的文件目录
+  Codex / Claude Code / MCP / shell + 明确授权的文件目录
 ```
 
 沙箱内的进程可以完成编码工作，但不能直接读取 Keychain、连接任意 TCP 地址或访问另一个 Agent 的目录。
 
 ## 启动流程
 
-`1024 run` 和 `1024 codex` 共用同一条运行器：
+`1024 run`、`1024 codex` 和 `1024 claude` 共用同一条运行器：
 
 1. 解析并规范化 `--folder` 和 `--read-only`。
 2. 拒绝主目录、Keychain、授权状态目录和读写重叠路径。
@@ -49,7 +49,13 @@ Codex CLI
 
 Seatbelt 只允许当前运行连接该回环端口。代理拒绝错误 session、错误路径、重定向、非 JSON 请求、过大请求/响应和凭证回显。关闭 OpenAI 开关后，新的请求不会再读取凭证。
 
-当前代理会完整缓冲 SSE 响应，限制为 16 MiB。这使实现简单且便于安全检查，但长任务可能延迟或超时。
+代理边检查边转发 SSE，限制为 16 MiB；JSON 响应则完整缓冲并检查后发送。流传输中途出错时，已发送的片段无法撤回。
+
+## Claude Code 路径
+
+`1024 claude` 使用相同的沙箱验证，启动已安装的原生 Claude Code CLI。临时 HOME 只含本次运行数据；沙箱内的 `ANTHROPIC_API_KEY` 是随机本地代理能力，不是上游 Key。CLI 通过 `ANTHROPIC_BASE_URL` 到达唯一获准的回环端口，宿主只转发已授权的 `POST /v1/messages`，从 Keychain 注入真正的 `x-api-key`。MCP 通过显式 JSON 配置连接本次运行的 broker。
+
+Claude Code 还需要读取当前用户私有的 `/private/tmp/claude-<uid>` 运行目录，并查询 `/tmp` 的元数据；启动前检查该目录的归属和权限，不放行整个临时目录。`--bare`、非交互输出和短期 HOME 避免读取用户的 Claude 配置。控制台不提供 Claude 任务入口。
 
 ## 宿主授权
 
@@ -61,7 +67,7 @@ Seatbelt 只允许当前运行连接该回环端口。代理拒绝错误 session
 
 状态按 Agent、服务和 GitHub 仓库分开保存。更新使用锁文件和临时文件原子替换；读取失败按拒绝处理。
 
-凭证通过 macOS `security` 命令交互写入 Keychain。生产代码不接受命令行中的凭证值，也不将凭证写入 `CODEX_HOME`、环境变量或 MCP 配置。
+上游凭证通过 macOS `security` 命令交互写入 Keychain。生产代码不接受命令行中的凭证值，也不将上游 Key 写入临时 HOME、环境变量或 MCP 配置。沙箱中的 Codex 配置和 Claude 环境变量只持有本次运行的本地代理能力。
 
 ## MCP
 
@@ -98,7 +104,8 @@ MCP server 通过本次运行的 broker 访问宿主能力；工具参数先在�
 | `authorization.go` / `authorization_cli.go` | 宿主授权状态和 CLI 修改入口 |
 | `credential_store.go` | macOS Keychain 适配 |
 | `github_client.go` / `github_repository.go` | GitHub 身份和仓库文本读取 |
-| `model_proxy.go` / `codex_runner.go` | 模型代理和 Codex 运行 |
+| `model_proxy.go` / `codex_runner.go` | OpenAI 模型代理和 Codex 运行 |
+| `anthropic_proxy.go` / `claude_runner.go` | Anthropic 模型代理和 Claude Code 运行 |
 | `dashboard.go` / `ui/` | 本机控制台和任务生命周期 |
 | `scripts/` | 覆盖率合并、smoke、无凭证演示 |
 
@@ -111,7 +118,7 @@ CLI / UI
   -> broker / service clients
 ```
 
-GitHub 与模型客户端不直接读取 CLI 参数；沙箱进程只能通过 broker 或模型代理访问宿主能力。测试通过函数注入替换 Keychain、HTTP 上游、Codex 二进制和任务执行器。
+GitHub 与模型客户端不直接读取 CLI 参数；沙箱进程只能通过 broker 或模型代理访问宿主能力。测试通过函数注入替换 Keychain、HTTP 上游、Agent 二进制和任务执行器。
 
 ## 设计取舍
 
